@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import * as vscode from "vscode";
 import type { Telemetry, TelemetryEvent } from "../telemetry/Telemetry";
 import { contextFor, renderDocument, type Unit } from "../text/units";
-import type { InworldClient, Voice } from "../tts/InworldClient";
+import { InworldError, type InworldClient, type Voice } from "../tts/InworldClient";
 import type { Synthesizer } from "./Synthesizer";
 import { Scheduler } from "./Scheduler";
 
@@ -87,6 +88,7 @@ export class ReaderPanel {
     private units: Unit[] = [];
     private byId = new Map<string, Unit>();
     private voices: Voice[] | undefined;
+    private lastError: string | undefined;
     private choice: Choice;
     private readonly scheduler: Scheduler;
     private readonly disposables: vscode.Disposable[] = [];
@@ -116,10 +118,7 @@ export class ReaderPanel {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [
-                    vscode.Uri.joinPath(context.extensionUri, "media"),
-                    deps.cacheDir,
-                ],
+                localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
             },
         );
         this.panel.iconPath = new vscode.ThemeIcon("unmute");
@@ -165,6 +164,9 @@ export class ReaderPanel {
             case "choose":
                 await this.choose({ language: String(message.language), voice: String(message.voice ?? "") });
                 break;
+            case "playbackError":
+                this.notifyError(`Markdown Reader: playback failed. ${String(message.message)}`);
+                break;
             case "telemetry":
                 this.deps.telemetry.record(message.event as TelemetryEvent);
                 break;
@@ -187,7 +189,7 @@ export class ReaderPanel {
         try {
             this.voices ??= await this.deps.client.listVoices();
         } catch (error) {
-            await this.post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+            this.notifyError(error);
             return;
         }
         const forLanguage = this.voices.filter((v) => v.languages.some((l) => l.startsWith(this.choice.language)));
@@ -227,13 +229,36 @@ export class ReaderPanel {
                 },
                 signal,
             );
-            await this.post({ type: "audio", id, uri: this.panel.webview.asWebviewUri(vscode.Uri.file(file)).toString(), spend: this.spend() });
+            // The bytes go to the webview, which plays them from a Blob: VS Code's local-resource loader
+            // failed to serve the cached .ogg files to the audio element ("no supported source").
+            await this.post({ type: "audio", id, data: new Uint8Array(await readFile(file)), spend: this.spend() });
         } catch (error) {
             if (!signal.aborted) {
-                await this.post({ type: "audioError", id, message: error instanceof Error ? error.message : String(error) });
+                this.notifyError(error);
+                await this.post({ type: "audioError", id });
             }
             throw error;
         }
+    }
+
+    /**
+     * Errors go to VS Code notifications, where they can't be missed. The same message is shown once
+     * until another one comes, so a failure repeated by every prepared unit doesn't flood the screen.
+     */
+    private notifyError(error: unknown): void {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === this.lastError) {
+            return;
+        }
+        this.lastError = message;
+        const keyRejected = error instanceof InworldError && (error.status === 401 || error.status === 403);
+        const actions = keyRejected ? ["Set API Key"] : [];
+        void vscode.window.showErrorMessage(message.startsWith("Markdown Reader") ? message : `Markdown Reader: ${message}`, ...actions).then((choice) => {
+            this.lastError = undefined;
+            if (choice === "Set API Key") {
+                void vscode.commands.executeCommand("markdownReader.setApiKey");
+            }
+        });
     }
 
     private spend(): { session: number; month: number } {
@@ -260,7 +285,7 @@ export class ReaderPanel {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource} https: data:; media-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource} https: data:; media-src blob:; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${media("reader.css")}">
 </head>
@@ -285,7 +310,6 @@ export interface Deps {
     client: InworldClient;
     synthesizer: Synthesizer;
     telemetry: Telemetry;
-    cacheDir: vscode.Uri;
 }
 
 function config(): vscode.WorkspaceConfiguration {

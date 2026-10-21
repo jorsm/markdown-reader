@@ -124,7 +124,10 @@
         audio.src = uri;
         audio.defaultPlaybackRate = speed();
         audio.playbackRate = speed();
-        audio.play().catch((error) => status(`Playback failed: ${error.message}`));
+        audio.play().catch((error) => {
+            pause();
+            post({ type: "playbackError", message: `${error.message} (Ogg Opus support in this VS Code: ${audio.canPlayType('audio/ogg; codecs="opus"') || "none"})` });
+        });
     }
 
     function next() {
@@ -245,23 +248,24 @@
                 break;
             case "reset":
                 pause();
+                audioById.forEach((url) => URL.revokeObjectURL(url));
                 audioById = new Map();
                 break;
             case "audio":
-                audioById.set(data.id, data.uri);
+                if (!audioById.has(data.id)) {
+                    audioById.set(data.id, URL.createObjectURL(new Blob([data.data], { type: "audio/ogg; codecs=opus" })));
+                }
                 showSpend(data.spend);
                 if (playing && units[index]?.id === data.id && audio.paused) {
                     playCurrent();
                 }
                 break;
             case "audioError":
-                status(data.message);
+                // The extension shows the error as a VS Code notification; the player only stops.
                 if (playing && units[index]?.id === data.id) {
+                    status("");
                     pause();
                 }
-                break;
-            case "error":
-                status(data.message);
                 break;
         }
     });

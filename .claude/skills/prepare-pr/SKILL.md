@@ -1,21 +1,20 @@
 ---
 name: prepare-pr
-description: The one sequence to run before a branch goes to review in this repo. Runs the checks and agent reviews in order, ticks the spec items or deliverables the branch completes, updates spec status and the specs index, adds the CHANGELOG entry, runs align-agents-md, then hands the branch to the owner with the filled PR template (or opens the PR once the repo is published). Use it whenever a branch is ready for review, when someone says "open a PR", "prepare the PR", "ready for review" or "ship this branch".
+description: The one sequence to run before opening or updating a PR in this repo. Runs the checks and agent reviews in order, ticks the spec items or deliverables the branch completes, updates spec status and the specs index, adds the CHANGELOG entry, runs align-agents-md, then opens the PR from the template. Use it whenever a branch is ready for review, when someone says "open a PR", "prepare the PR", "ready for review" or "ship this branch".
 ---
 
-# Prepare a branch for review
+# Prepare a PR
 
 This skill is the only place that states the order of steps before review (spec 0001 D3). `AGENTS.md` and the PR template point here. Run every step in order; when you skip one, say which and why in the Review section. A skipped or failing check is not a pass.
 
 The base is `develop`. Compare against the merge base, including uncommitted work:
 
 ```sh
-MB=$(git merge-base develop HEAD)
+git fetch origin develop
+MB=$(git merge-base origin/develop HEAD)
 git diff --name-status "$MB"
 git ls-files --others --exclude-standard
 ```
-
-Once the repo has an `origin` remote (spec 0001 D7), fetch first and use `origin/develop` instead of `develop`.
 
 ## 1. Branch
 
@@ -59,12 +58,12 @@ Run the project skill (other tools: follow `.claude/skills/align-agents-md/SKILL
 
 If steps 3 to 7 changed files, run `npm run check` again. In Claude Code the Stop hook also runs it.
 
-## 9. Hand over for review
+## 9. Open the PR
 
-- **No `origin` remote (today):** don't push and don't merge. Fill `.github/pull_request_template.md` and put it in your final report, with a Conventional Commits title. The owner reviews the diff and merges into `develop` with `git merge --no-ff <branch>`.
-- **Published:** push the branch and open the PR against `develop` with the template. When updating an open PR, update its description to match the new commits.
-- Either way, fill every section: the spec link (or "none needed" and why); the commands from steps 2 and 8 with their results; the Behavior impact option that applies; the Docs boxes and the align-agents-md report line; the Review box with any skipped steps; out-of-scope findings.
+- Push the branch and open the PR against `develop` with `.github/pull_request_template.md`. Title in Conventional Commits. Never merge it: the owner does.
+- When updating an open PR, update its description to match the new commits.
+- Fill every section: the spec link (or "none needed" and why); the commands from steps 2 and 8 with their results; the Behavior impact option that applies; the Docs boxes and the align-agents-md report line; the Review box with any skipped steps; out-of-scope findings.
 
 ## 10. Report
 
-End with: the branch name (or PR link), the commands run and their results, the steps skipped and why, the spec items ticked, and the filled template when there is no remote.
+End with: the PR link, the commands run and their results, the steps skipped and why, and the spec items ticked.

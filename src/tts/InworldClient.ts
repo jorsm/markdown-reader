@@ -1,5 +1,7 @@
 const API = "https://api.inworld.ai/tts/v1";
 const MP3_BIT_RATE = 64000;
+/** A request that takes longer has hung: it fails instead of holding a scheduler slot forever. */
+const REQUEST_TIMEOUT_MS = 20_000;
 
 export interface SynthRequest {
     text: string;
@@ -74,7 +76,14 @@ export class InworldClient {
         if (!key) {
             throw new InworldError(401, "No Inworld API key. Run “Markdown Reader: Set API Key”.");
         }
-        const response = await this.fetchImpl(`${API}${path}`, { ...init, headers: { Authorization: `Basic ${key}`, "Content-Type": "application/json" } });
+        const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+        const signal = init.signal
+            ? AbortSignal.any([
+                  init.signal,
+                  timeout,
+              ])
+            : timeout;
+        const response = await this.fetchImpl(`${API}${path}`, { ...init, signal, headers: { Authorization: `Basic ${key}`, "Content-Type": "application/json" } });
         // An error body that isn't JSON still yields the status below.
         const json: any = await response.json().catch(() => ({}));
         if (!response.ok) {

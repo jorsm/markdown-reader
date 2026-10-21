@@ -1,13 +1,12 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-
-export type PlayResult = "ended" | "stopped";
+import type { AudioOutput, PlayResult } from "./AudioOutput";
 
 /**
  * Plays audio files with ffplay from the extension host. VS Code's webview can't be relied on for
  * sound: the snap build's Chromium has no PulseAudio/PipeWire output, so audio "plays" in silence.
  * Speed uses ffmpeg's atempo filter, which keeps the pitch.
  */
-export class NativePlayer {
+export class NativePlayer implements AudioOutput {
     private process: ChildProcess | undefined;
     private paused = false;
 
@@ -58,11 +57,14 @@ export class NativePlayer {
                 } else if (code === 0) {
                     resolve("ended");
                 } else {
-                    reject(new Error(`ffplay exited with code ${code}: ${stderr.trim().slice(-300) || "no output"}`));
+                    reject(new Error(`ffplay exited with code ${code}: ${tail(stderr) || "no output"}`));
                 }
             });
         });
     }
+
+    /** ffplay's tempo is fixed per process: a new speed applies from the next unit. */
+    setSpeed(): void {}
 
     pause(): void {
         if (this.process && !this.paused) {
@@ -84,11 +86,9 @@ export class NativePlayer {
             return;
         }
         this.process = undefined;
-        if (this.paused) {
-            child.kill("SIGCONT");
-            this.paused = false;
-        }
-        child.kill("SIGTERM");
+        // A paused (SIGSTOP) process gets SIGKILL: SIGCONT first would let a fragment of audio out.
+        child.kill(this.paused ? "SIGKILL" : "SIGTERM");
+        this.paused = false;
     }
 }
 
@@ -98,4 +98,8 @@ function hostEnv(): NodeJS.ProcessEnv {
     delete env.LD_LIBRARY_PATH;
     delete env.LD_PRELOAD;
     return env;
+}
+
+function tail(output: string): string {
+    return output.trim().slice(-300);
 }

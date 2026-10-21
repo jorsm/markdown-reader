@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { access, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { costUsd, type Telemetry } from "../telemetry/Telemetry";
+import { shortHash } from "../text/units";
 import type { InworldClient, SynthRequest } from "../tts/InworldClient";
 
 /** Bumped when the text rules change what is spoken, so old audio is not reused. */
@@ -25,37 +26,49 @@ export class Synthesizer {
 
     async ensure(job: SynthJob, signal?: AbortSignal): Promise<string> {
         const file = join(this.cacheDir, `${cacheKey(job)}.mp3`);
-        const base = { type: "synth" as const, model: job.modelId, voice: job.voiceId, language: job.language, doc: job.doc, charsSent: job.text.length };
-        if (existsSync(file)) {
-            this.telemetry.record({ ...base, charsBilled: 0, costUsd: 0, cacheHit: true, totalMs: 0, audioMs: 0 });
+        const base = { type: "synth" as const, model: job.modelId, voice: job.voiceId, language: job.language, doc: job.doc, charsSent: job.text.length, charsBilled: 0, costUsd: 0, cacheHit: false, totalMs: 0, audioMs: 0 };
+        if (await exists(file)) {
+            this.telemetry.record({ ...base, cacheHit: true });
             return file;
         }
         try {
             const result = await this.client.synthesize(job, signal);
-            writeFileSync(file, result.audio);
-            const cost = costUsd(result.charsBilled, job.modelId, this.prices());
-            this.telemetry.record({ ...base, charsBilled: result.charsBilled, costUsd: cost, cacheHit: false, totalMs: result.totalMs, audioMs: result.audioMs });
+            // Write then rename: an interrupted write never leaves a truncated file at the cache key.
+            const partial = `${file}.${process.pid}.part`;
+            await writeFile(partial, result.audio);
+            await rename(partial, file);
+            this.telemetry.record({ ...base, charsBilled: result.charsBilled, costUsd: costUsd(result.charsBilled, job.modelId, this.prices()), totalMs: result.totalMs, audioMs: result.audioMs });
             return file;
         } catch (error) {
-            const name = error instanceof Error ? (error.name === "AbortError" ? "aborted" : error.message.slice(0, 120)) : "unknown";
-            this.telemetry.record({ ...base, charsBilled: 0, costUsd: 0, cacheHit: false, totalMs: 0, audioMs: 0, error: name });
+            this.telemetry.record({ ...base, error: error instanceof Error && error.name === "AbortError" ? "aborted" : errorMessage(error).slice(0, 120) });
             throw error;
         }
     }
 }
 
 export function cacheKey(job: SynthRequest): string {
-    return createHash("sha256")
-        .update(
-            JSON.stringify([
-                "inworld",
-                job.modelId,
-                job.voiceId,
-                job.language,
-                PROCESSOR_ID,
-                job.text,
-            ]),
-        )
-        .digest("hex")
-        .slice(0, 32);
+    return shortHash(
+        JSON.stringify([
+            "inworld",
+            job.modelId,
+            job.voiceId,
+            job.language,
+            PROCESSOR_ID,
+            job.text,
+        ]),
+        32,
+    );
+}
+
+export function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+async function exists(file: string): Promise<boolean> {
+    try {
+        await access(file);
+        return true;
+    } catch {
+        return false;
+    }
 }

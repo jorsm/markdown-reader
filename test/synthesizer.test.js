@@ -74,3 +74,10 @@ test("preceding text goes to Inworld as unspoken synthesis context, not as text 
     assert.deepEqual(calls[0].body.synthesisContext, { previousRequests: [{ text: job.context[0] }] });
     assert.equal(calls[0].auth, `Basic ${KEY}`);
 });
+
+test("the month total counts the first spend of the month once", async () => {
+    const { telemetry, synthesizer, job } = setup();
+    await synthesizer.ensure(job);
+    assert.equal(telemetry.monthSpend().charsBilled, job.text.length);
+    assert.equal(telemetry.sessionSpend().charsBilled, job.text.length);
+});

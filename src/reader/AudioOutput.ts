@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 
+/** How a {@link AudioOutput.play} call ended: the audio finished, or {@link AudioOutput.stop} cut it short. */
 export type PlayResult = "ended" | "stopped";
 
 /** Where audio is heard. The reader's sequencer drives one of these and does not care which. */
@@ -46,14 +47,17 @@ export class WebviewOutput implements AudioOutput {
         }
     }
 
+    /** Pauses the panel's audio element. */
     pause(): void {
         void this.post({ type: "pauseAudio" });
     }
 
+    /** Resumes the panel's audio element. */
     resume(): void {
         void this.post({ type: "resumeAudio" });
     }
 
+    /** Ends the unit playing now: its `play` promise resolves "stopped". */
     stop(): void {
         this.pending?.resolve("stopped");
         this.pending = undefined;

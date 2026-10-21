@@ -3,6 +3,7 @@ const MP3_BIT_RATE = 64000;
 /** A request that takes longer has hung: it fails instead of holding a scheduler slot forever. */
 const REQUEST_TIMEOUT_MS = 20_000;
 
+/** What Inworld is asked to say, and how. */
 export interface SynthRequest {
     text: string;
     voiceId: string;
@@ -12,6 +13,7 @@ export interface SynthRequest {
     context: string[];
 }
 
+/** Inworld's answer with what telemetry and spend need. */
 export interface SynthResult {
     /** MP3 audio, constant bit rate. */
     audio: Buffer;
@@ -20,6 +22,7 @@ export interface SynthResult {
     audioMs: number;
 }
 
+/** An Inworld voice, as its voice list describes it. */
 export interface Voice {
     voiceId: string;
     displayName: string;
@@ -27,6 +30,7 @@ export interface Voice {
     languages: string[];
 }
 
+/** A request Inworld answered with an error status; 401 and 403 mean the key is wrong. */
 export class InworldError extends Error {
     constructor(
         readonly status: number,
@@ -43,6 +47,7 @@ export class InworldClient {
         private readonly fetchImpl: typeof fetch = fetch,
     ) {}
 
+    /** Synthesizes one unit as MP3; `signal` aborts it. */
     async synthesize(request: SynthRequest, signal?: AbortSignal): Promise<SynthResult> {
         const started = performance.now();
         const body: Record<string, unknown> = {
@@ -66,6 +71,7 @@ export class InworldClient {
         };
     }
 
+    /** Inworld's voices, all languages; free, so it also checks the key. */
     async listVoices(): Promise<Voice[]> {
         const json = await this.call("/voices", { method: "GET" });
         return (json.voices ?? []) as Voice[];

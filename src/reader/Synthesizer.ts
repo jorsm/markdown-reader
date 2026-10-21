@@ -8,6 +8,7 @@ import type { InworldClient, SynthRequest } from "../tts/InworldClient";
 /** Bumped when the text rules change what is spoken, so old audio is not reused. */
 export const PROCESSOR_ID = "rules-1";
 
+/** One unit to synthesize, with the document it belongs to. */
 export interface SynthJob extends SynthRequest {
     /** Workspace-relative path of the document, for spend per document. */
     doc: string;
@@ -24,6 +25,7 @@ export class Synthesizer {
         mkdirSync(cacheDir, { recursive: true });
     }
 
+    /** The unit's audio file: from the cache, or synthesized and cached. Records a `synth` telemetry event either way. */
     async ensure(job: SynthJob, signal?: AbortSignal): Promise<string> {
         const file = join(this.cacheDir, `${cacheKey(job)}.mp3`);
         const base = { type: "synth" as const, model: job.modelId, voice: job.voiceId, language: job.language, doc: job.doc, charsSent: job.text.length, charsBilled: 0, costUsd: 0, cacheHit: false, totalMs: 0, audioMs: 0 };
@@ -46,6 +48,7 @@ export class Synthesizer {
     }
 }
 
+/** The audio cache key: everything that changes the audio (engine, model, voice, language, text rules, text), nothing that does not. */
 export function cacheKey(job: SynthRequest): string {
     return shortHash(
         JSON.stringify([
@@ -60,6 +63,7 @@ export function cacheKey(job: SynthRequest): string {
     );
 }
 
+/** The message of any thrown value, for notifications and telemetry. */
 export function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }

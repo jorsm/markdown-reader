@@ -22,6 +22,7 @@ export type TelemetryEvent =
     | { type: "stall"; waitMs: number; speed: number }
     | { type: "session_end"; unitsPlayed: number; stalls: number; speed: number };
 
+/** Spend over some period: what Inworld billed, its estimated cost, and how many requests the cache saved. */
 export interface SpendTotals {
     charsBilled: number;
     costUsd: number;
@@ -54,6 +55,7 @@ export class Telemetry {
         this.prune();
     }
 
+    /** Appends the event to today's file and, for synthesis, adds it to the spend ledger. */
     record(event: TelemetryEvent): void {
         const line = JSON.stringify({ at: this.now().toISOString(), ...event });
         appendFileSync(join(this.eventsDir, `${day(this.now())}.jsonl`), `${line}\n`);
@@ -62,10 +64,12 @@ export class Telemetry {
         }
     }
 
+    /** Spend since VS Code started. */
     sessionSpend(): SpendTotals {
         return { ...this.session };
     }
 
+    /** Spend of the current calendar month (UTC). */
     monthSpend(): SpendTotals {
         return { ...this.currentMonth() };
     }
@@ -135,6 +139,7 @@ export class Telemetry {
     }
 }
 
+/** Estimated cost in USD of `charsBilled` characters on `model`, at the configured price per million. */
 export function costUsd(charsBilled: number, model: string, pricePerMillion: Record<string, number>): number {
     return (charsBilled * (pricePerMillion[model] ?? 0)) / 1_000_000;
 }

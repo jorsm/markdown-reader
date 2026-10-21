@@ -27,6 +27,7 @@ export class Scheduler {
         private readonly run: (id: string, signal: AbortSignal) => Promise<string>,
     ) {}
 
+    /** Sets the window of units to prepare, in playing order: drops units outside it and queues new ones. */
     want(ids: string[]): void {
         const wanted = new Set(ids);
         for (const [
@@ -51,6 +52,7 @@ export class Scheduler {
         return entry ? entry.promise : Promise.reject(new NotWantedError());
     }
 
+    /** True when the unit's audio is prepared, so playing it needs no wait. */
     isReady(id: string): boolean {
         return this.entries.get(id)?.state === "done";
     }

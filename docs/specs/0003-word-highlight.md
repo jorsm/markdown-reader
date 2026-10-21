@@ -60,7 +60,9 @@ The second is chosen if D1 shows the status line is reliable and frequent enough
 Proposed in this draft (22 Oct 2026), to be confirmed in review:
 
 - Word highlighting on both audio outputs, ffplay and the panel's audio element.
-- Every new synthesis asks for word timestamps; units already in the cache without them keep sentence highlighting and are not re-synthesized.
+- **Off by default, behind a "Words" checkbox in the panel toolbar** (setting `markdownReader.wordHighlight`, default `false`), because timestamps slow synthesis down. Its tooltip says what it does and the trade-off: "Highlight each word as it is spoken. Asks Inworld for word timings, which makes each sentence slower to prepare (most on TTS-2); no extra cost. Sentences already prepared without timings keep sentence highlighting." (owner, 22 Oct 2026)
+- Only synthesis with the checkbox on asks for word timestamps; units already in the cache without them keep sentence highlighting and are not re-synthesized (owner, 22 Oct 2026).
+- Clicking a word starts its whole sentence, as today (owner, 22 Oct 2026).
 - The sentence stays highlighted as today; the current word gets a second, stronger highlight inside it.
 
 ## Behavior and invariants
@@ -73,7 +75,7 @@ Proposed in this draft (22 Oct 2026), to be confirmed in review:
 
 ### Synthesis and cache
 
-- Requests ask for `timestampType: WORD`. The audio cache stores, next to each audio file, its word timings converted to spoken-text offsets (start and end time per spoken character range), under the same cache key.
+- With word highlighting on, requests ask for `timestampType: WORD`; with it off they don't, and synthesis is as fast as without this spec. The audio cache stores, next to each audio file, its word timings converted to spoken-text offsets (start and end time per spoken character range), under the same cache key.
 - Cache key and billing are unchanged. A cached unit without timings is played as before, with sentence highlighting.
 
 ### Highlighting
@@ -90,7 +92,7 @@ Proposed in this draft (22 Oct 2026), to be confirmed in review:
 - [ ] D1. Spike: ffplay's status line as a clock (format, frequency, behavior under `atempo` and SIGSTOP); the result chooses the ffplay clock and is recorded in this spec.
 - [ ] D2. Alignment maps from the deterministic text rules, with tests on real specs (code spans, links, emphasis, table rows, numbers).
 - [ ] D3. Timestamps requested, stored next to the cached audio, and mapped to displayed offsets; the D3 benchmark of spec 0002 rerun with timestamps on, both models, results recorded here.
-- [ ] D4. The word highlight in the panel on both outputs, including pause, resume, speed change and save while listening.
+- [ ] D4. The word highlight in the panel on both outputs, including pause, resume, speed change and save while listening, and the "Words" checkbox with its tooltip.
 
 ## Acceptance checks
 
@@ -98,11 +100,12 @@ Proposed in this draft (22 Oct 2026), to be confirmed in review:
 - For every unit of the specs in both repos, the alignment map covers every spoken character, and every mapped displayed range lies inside the unit's text. Catches maps that drift off the sentence.
 - A sentence with a code span highlights the whole code span while its spoken words ("src slash utils…") play. Catches code spans mapped word by word to the wrong characters.
 - Pausing for 10 s and resuming keeps the word highlight in step on ffplay. Catches a clock that keeps running while paused.
-- A unit cached before this change plays with sentence highlighting and makes no new synthesis request. Catches silent re-synthesis of the cache.
+- A unit cached before this change, or while the checkbox was off, plays with sentence highlighting and makes no new synthesis request. Catches silent re-synthesis of the cache.
+- With the checkbox off, requests carry no `timestampType` and the panel shows no word highlight. Catches timestamps slowing synthesis for owners who didn't ask for them.
 - Characters billed per request are the same with and without timestamps (telemetry `charsBilled` equals `charsSent`). Catches a hidden cost.
 
 ## Open questions
 
-- If timestamps push the p95 synthesis time too high on TTS-2 (D3), should TTS-2 request them at all, or only Flash?
-- Should a command re-synthesize a document's cached units to add timestamps, for documents read often?
-- Should clicking a word seek to it inside its unit (ffplay `-ss`, `audio.currentTime`)? Out of scope here; a candidate for the next spec.
+- If D3 shows timestamps make TTS-2 too slow to keep up at 2.5×, should the checkbox stay usable with TTS-2, or warn when both are on?
+
+Resolved on 22 Oct 2026: no command to re-synthesize cached units with timestamps (a command that clears the whole audio cache is enough, outside this spec); clicking a word starts its whole sentence, no seeking.

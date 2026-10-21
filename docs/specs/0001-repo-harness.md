@@ -43,6 +43,7 @@ The repo is also a second trial of the spec-driven workflow used in `jorsm/verte
 | Main agent is Claude Code; Codex and VS Code Copilot chat are supported | One root `AGENTS.md`, no `CLAUDE.md`. Claude Code-only features (skills, hooks) are conveniences; the gate every agent meets is `npm run check` |
 | The owner works alone, through agents, and reviews every branch         | No approving review is required; the gate is `npm run check`                                                                                    |
 | Published as a public repo, `jorsm/markdown-reader` (21 Oct 2026)       | CI and GitHub branch protection gate `develop` and `main`; the local hooks stay as an early guard                                               |
+| Exported code is documented with TSDoc (22 Oct 2026)                    | Rule in `AGENTS.md`, enforced by ESLint (D8)                                                                                                    |
 | Repo text is public once published                                      | Specs, commits and PR texts carry no private remarks, credentials or identifiers                                                                |
 
 ## Deliverables
@@ -102,11 +103,21 @@ In `AGENTS.md`: tests assert on what the user or VS Code observes (text, audio r
 
 Create the public GitHub repository `jorsm/markdown-reader` with `develop` as default branch, push `main` and `develop` once with `HUSKY=0`, add a CI workflow running `npm run check` on pushes and PRs to `develop` and `main`, and enable branch protection on both (PR required, the CI check required, zero approvals, enforced for admins, no force pushes or deletions). Update `AGENTS.md` and D3 to drop the local-merge path, and add the MIT `LICENSE` that `package.json` declares.
 
+### D8. TSDoc comments
+
+- [x] Delivered
+
+Code is read by agents and by the owner, often away from the change that wrote it, so what each exported piece does and why must be written next to it.
+
+- **Rule** (in `AGENTS.md`, Writing code): exported functions, classes, public methods, interfaces, types and constants have a TSDoc comment saying what they do and why, not how. Private code gets a comment only where its name and types don't explain it: a comment on every helper is noise.
+- **Gate:** ESLint with `eslint-plugin-jsdoc` (`require-jsdoc`, limited to exported declarations and public methods, constructors excluded) and `eslint-plugin-tsdoc` (`tsdoc/syntax`), both errors, so `npm run check` and CI fail on a missing or malformed comment.
+
 ## Acceptance checks
 
 - `git commit` on `develop` or `main` fails with the branch-protection message; on a feature branch it succeeds. Catches a hook that was not installed by `npm ci`.
 - `git push <remote> develop` fails before contacting the remote. Catches a pre-push hook that only runs checks.
 - `npm run check` passes on a clean checkout, and a PR that breaks it cannot merge into `develop`. Catches a harness that cannot gate anything.
+- Removing the TSDoc comment of an exported function makes `npm run lint` fail. Catches a rule that is written down but not enforced.
 - `node .claude/skills/align-agents-md/scripts/check-references.mjs` reports no problems. Catches an `AGENTS.md` naming paths or scripts that don't exist.
 
 ## Open questions

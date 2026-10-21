@@ -20,6 +20,7 @@
     const speedLabel = document.getElementById("speed");
     const languageSelect = document.getElementById("language");
     const voiceSelect = document.getElementById("voice");
+    const modelSelect = document.getElementById("model");
     const spendLabel = document.getElementById("spend");
     const statusLabel = document.getElementById("status");
     const audio = new Audio();
@@ -218,6 +219,7 @@
 
     languageSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: "" }));
     voiceSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: voiceSelect.value }));
+    modelSelect.addEventListener("change", () => post({ type: "model", value: modelSelect.value }));
 
     document.addEventListener("keydown", (event) => {
         if (event.target instanceof HTMLSelectElement) {
@@ -246,6 +248,7 @@
                 doc.innerHTML = data.html;
                 units = data.units;
                 native = data.native;
+                modelSelect.value = data.model;
                 if (current) {
                     const same = units.findIndex((u) => u.id === current.id);
                     index = same >= 0 ? same : units.findIndex((u) => u.line >= current.line);

@@ -99,7 +99,7 @@ Made by the owner on 21 Oct 2026:
 
 ### Panel
 
-- A button in the editor title bar for Markdown files, and the command **Spec Reader: Open Reader**, open the panel beside the editor for the active file.
+- A button in the editor title bar for Markdown files, and the command **Markdown Reader: Open Reader**, open the panel beside the editor for the active file.
 - The panel renders the file with `markdown-it`. YAML frontmatter is not shown or read.
 - A toolbar at the top of the panel has a **language** selector (Inworld's 15 tier-1 languages, English first) and a **voice** selector listing the voices whose original language matches, with their description as tooltip. The language and voice are remembered per document, falling back to the last ones used; the first defaults are English with Elliot and Italian with Orietta. Changing either stops playback and empties the prepared units, not the cache.
 - Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. Code blocks are units that are skipped, not read (see Open questions).
@@ -129,14 +129,14 @@ Made by the owner on 21 Oct 2026:
 - One synthesis request per unit. Audio is cached on disk in the extension's global storage, keyed by a hash of engine, model, voice, language, processor id and version, and spoken segments. Re-listening never calls the engine; editing a sentence re-synthesizes only that unit.
 - From the playing unit, the next N units (default 6) are prepared with up to C requests in flight (default 3). A click elsewhere cancels in-flight requests outside the new window.
 - Speed is applied by the player with pitch preserved. Changing speed never re-synthesizes.
-- The Inworld key is kept in `SecretStorage` (command **Spec Reader: Set API Key**). It stays in the extension host: the webview never sees it, and it is never written to settings, logs or telemetry.
+- The Inworld key is kept in `SecretStorage` (command **Markdown Reader: Set API Key**). It stays in the extension host: the webview never sees it, and it is never written to settings, logs or telemetry.
 - The text of the file goes to the chosen engine's provider and nowhere else.
 
 ### Telemetry
 
 - Local only: JSON Lines files in the extension's global storage, one per day, deleted after 30 days. Nothing is sent anywhere.
 - Events carry metadata only, never document text: `synth` (engine, model, voice, language, characters, cache hit, time to first byte, total time, audio duration, error code), `play_start` (click to first sound), `stall` (wait time, speed, units ready), `session_end` (units played, speed, stall count).
-- **Spec Reader: Show Telemetry Summary** prints p50 and p95 per engine and the stall count per session in an output channel.
+- **Markdown Reader: Show Telemetry Summary** prints p50 and p95 per engine and the stall count per session in an output channel.
 
 ## Deliverables
 

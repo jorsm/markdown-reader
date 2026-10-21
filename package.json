@@ -64,6 +64,21 @@
                     "default": "inworld-tts-2-flash",
                     "description": "Inworld TTS model used to read documents."
                 },
+                "markdownReader.audioOutput": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "ffplay",
+                        "webview"
+                    ],
+                    "enumDescriptions": [
+                        "ffplay when it is on the PATH, otherwise the panel.",
+                        "Always ffplay (FFmpeg), run by the extension; needed where the panel has no sound, such as the snap build of VS Code.",
+                        "Always the panel's own audio element."
+                    ],
+                    "default": "auto",
+                    "description": "Where audio is played. Reload the window after changing it."
+                },
                 "markdownReader.pricePerMillionCharacters": {
                     "type": "object",
                     "additionalProperties": {

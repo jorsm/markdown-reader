@@ -5,6 +5,7 @@ import type { Telemetry, TelemetryEvent } from "../telemetry/Telemetry";
 import { contextFor, renderDocument, type Unit } from "../text/units";
 import { InworldError, type InworldClient, type Voice } from "../tts/InworldClient";
 import type { Synthesizer } from "./Synthesizer";
+import type { NativePlayer } from "./NativePlayer";
 import { Scheduler } from "./Scheduler";
 
 /** Inworld's tier-1 languages, English first. */
@@ -75,6 +76,8 @@ export const LANGUAGES: [
 ];
 
 const DEFAULT_VOICES: Record<string, string> = { en: "Elliot", it: "Orietta" };
+/** Silence after each kind of unit at 1×, in milliseconds; divided by the speed. Mirrors `PAUSE_MS` in media/reader.js. */
+const PAUSE_MS: Record<string, number> = { heading: 650, sentence: 280, row: 200 };
 
 interface Choice {
     language: string;
@@ -92,6 +95,13 @@ export class ReaderPanel {
     private choice: Choice;
     private readonly scheduler: Scheduler;
     private readonly disposables: vscode.Disposable[] = [];
+    /** Native playback (ffplay): prepared audio files by unit id, and who waits for them. */
+    private readonly files = new Map<string, string>();
+    private readonly waiters = new Map<string, { resolve: (file: string) => void; reject: (error: unknown) => void }[]>();
+    private session = 0;
+    private speed = 1.5;
+    private paused = false;
+    private onResume: (() => void) | undefined;
 
     static show(context: vscode.ExtensionContext, document: vscode.TextDocument, deps: Deps): void {
         const key = document.uri.toString();
@@ -141,6 +151,7 @@ export class ReaderPanel {
     }
 
     private dispose(): void {
+        this.stopNative();
         this.scheduler.reset();
         ReaderPanel.panels.delete(this.document.uri.toString());
         for (const d of this.disposables) {
@@ -164,6 +175,27 @@ export class ReaderPanel {
             case "choose":
                 await this.choose({ language: String(message.language), voice: String(message.voice ?? "") });
                 break;
+            case "start": {
+                this.speed = Number(message.speed) || this.speed;
+                const index = this.units.findIndex((u) => u.id === message.id);
+                if (index >= 0) {
+                    void this.playFrom(index);
+                }
+                break;
+            }
+            case "pause":
+                this.paused = true;
+                this.deps.player?.pause();
+                break;
+            case "resume":
+                this.paused = false;
+                this.deps.player?.resume();
+                this.onResume?.();
+                break;
+            case "speed":
+                // ffplay's tempo is fixed per process: the new speed applies from the next unit.
+                this.speed = Number(message.value) || this.speed;
+                break;
             case "playbackError":
                 this.notifyError(`Markdown Reader: playback failed. ${String(message.message)}`);
                 break;
@@ -182,7 +214,7 @@ export class ReaderPanel {
                 u,
             ]),
         );
-        void this.post({ type: "render", html, units: units.map(({ id, kind, line }) => ({ id, kind, line })), choice: this.choice, languages: LANGUAGES, spend: this.spend() });
+        void this.post({ type: "render", html, units: units.map(({ id, kind, line }) => ({ id, kind, line })), choice: this.choice, languages: LANGUAGES, spend: this.spend(), native: !!this.deps.player });
     }
 
     private async sendVoices(): Promise<void> {
@@ -202,7 +234,9 @@ export class ReaderPanel {
     private async choose(next: Choice): Promise<void> {
         const languageChanged = next.language !== this.choice.language;
         this.choice = next;
+        this.stopNative();
         this.scheduler.reset();
+        this.files.clear();
         await this.context.workspaceState.update(choiceKey(this.document), next);
         await this.context.globalState.update("markdownReader.lastChoice", next);
         if (languageChanged) {
@@ -229,15 +263,102 @@ export class ReaderPanel {
                 },
                 signal,
             );
-            // The bytes go to the webview, which plays them from a Blob URL: no local-resource root is needed for the cache.
-            await this.post({ type: "audio", id, data: new Uint8Array(await readFile(file)), spend: this.spend() });
+            this.files.set(id, file);
+            for (const waiter of this.waiters.get(id) ?? []) {
+                waiter.resolve(file);
+            }
+            this.waiters.delete(id);
+            if (this.deps.player) {
+                await this.post({ type: "audio", id, spend: this.spend() });
+            } else {
+                // The bytes go to the webview, which plays them from a Blob URL: no local-resource root is needed for the cache.
+                await this.post({ type: "audio", id, data: new Uint8Array(await readFile(file)), spend: this.spend() });
+            }
         } catch (error) {
             if (!signal.aborted) {
+                for (const waiter of this.waiters.get(id) ?? []) {
+                    waiter.reject(error);
+                }
+                this.waiters.delete(id);
                 this.notifyError(error);
                 await this.post({ type: "audioError", id });
             }
             throw error;
         }
+    }
+
+    /**
+     * Native playback: plays units with ffplay from `start` until the end, a new start or a stop.
+     * The webview only shows which unit plays; timings go to telemetry as in the webview player.
+     */
+    private async playFrom(start: number): Promise<void> {
+        const player = this.deps.player;
+        if (!player) {
+            return;
+        }
+        const session = ++this.session;
+        player.stop();
+        this.paused = false;
+        const clickedAt = performance.now();
+        let played = 0;
+        let stalls = 0;
+        for (let i = start; i < this.units.length; i++) {
+            const unit = this.units[i]!;
+            this.scheduler.want(this.units.slice(i, i + config().get<number>("lookahead", 6) + 1).map((u) => u.id));
+            await this.post({ type: "playing", id: unit.id });
+            const ready = this.files.get(unit.id);
+            const waitStart = performance.now();
+            let file = ready;
+            try {
+                if (!file) {
+                    await this.post({ type: "waiting" });
+                    file = await this.waitForFile(unit.id);
+                }
+                if (session !== this.session) {
+                    return;
+                }
+                if (i === start) {
+                    this.deps.telemetry.record({ type: "play_start", ms: Math.round(performance.now() - clickedAt), cacheHit: !!ready, speed: this.speed });
+                } else if (!ready) {
+                    stalls++;
+                    this.deps.telemetry.record({ type: "stall", waitMs: Math.round(performance.now() - waitStart), speed: this.speed });
+                }
+                if ((await player.play(file, this.speed)) === "stopped" || session !== this.session) {
+                    return;
+                }
+            } catch (error) {
+                if (session === this.session) {
+                    this.notifyError(error);
+                    await this.post({ type: "stopped" });
+                }
+                return;
+            }
+            played++;
+            await new Promise((resolve) => setTimeout(resolve, (PAUSE_MS[unit.kind] ?? 250) / this.speed));
+            while (this.paused && session === this.session) {
+                await new Promise<void>((resolve) => (this.onResume = resolve));
+            }
+            if (session !== this.session) {
+                return;
+            }
+        }
+        this.deps.telemetry.record({ type: "session_end", unitsPlayed: played, stalls, speed: this.speed });
+        await this.post({ type: "stopped" });
+    }
+
+    private waitForFile(id: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const list = this.waiters.get(id) ?? [];
+            list.push({ resolve, reject });
+            this.waiters.set(id, list);
+        });
+    }
+
+    private stopNative(): void {
+        this.session++;
+        this.paused = false;
+        this.onResume?.();
+        this.deps.player?.stop();
     }
 
     /**
@@ -307,6 +428,8 @@ export class ReaderPanel {
 
 export interface Deps {
     client: InworldClient;
+    /** Plays audio from the extension host; undefined when the webview plays it. */
+    player: NativePlayer | undefined;
     synthesizer: Synthesizer;
     telemetry: Telemetry;
 }

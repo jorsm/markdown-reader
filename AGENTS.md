@@ -19,7 +19,7 @@ Don't create new Markdown outside `docs/specs/`, `.claude/skills/`, `AGENTS.md`,
 - `src/extension.ts` — activation, commands, the Inworld key in `SecretStorage`
 - `src/text/units.ts` — Markdown to speech units (sentences, headings, table rows), spoken text rules, synthesis context
 - `src/tts/InworldClient.ts` — Inworld REST calls (synthesis, voices)
-- `src/reader/` — `ReaderPanel` (webview, language and voice choice), `Synthesizer` (audio cache, spend), `Scheduler` (lookahead and concurrency)
+- `src/reader/` — `ReaderPanel` (webview, language and voice choice, playback sequence), `NativePlayer` (ffplay playback from the extension host), `Synthesizer` (audio cache, spend), `Scheduler` (lookahead and concurrency)
 - `src/telemetry/Telemetry.ts` — local JSONL events and the spend ledger
 - `media/` — the panel's player script and styles
 - `test/` — Node test runner suites, named `<name>.test.js`; they import compiled `out/*.js` and use a fake `fetch` for Inworld

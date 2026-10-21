@@ -12,9 +12,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // Several units are prepared at once: they share one prompt when the key is missing.
     let asking: Promise<string | undefined> | undefined;
     const client = new InworldClient(async () => (await context.secrets.get(KEY_SECRET)) ?? (await (asking ??= askForKey(context).finally(() => (asking = undefined)))));
-    const cacheDir = vscode.Uri.joinPath(storage, "audio");
-    const synthesizer = new Synthesizer(cacheDir.fsPath, client, telemetry, () => vscode.workspace.getConfiguration("markdownReader").get<Record<string, number>>("pricePerMillionCharacters", {}));
-    const deps: Deps = { client, synthesizer, telemetry, cacheDir };
+    const synthesizer = new Synthesizer(vscode.Uri.joinPath(storage, "audio").fsPath, client, telemetry, () => vscode.workspace.getConfiguration("markdownReader").get<Record<string, number>>("pricePerMillionCharacters", {}));
+    const deps: Deps = { client, synthesizer, telemetry };
 
     context.subscriptions.push(
         vscode.commands.registerCommand("markdownReader.open", async (uri?: vscode.Uri) => {

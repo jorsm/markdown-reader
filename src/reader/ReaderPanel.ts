@@ -229,8 +229,7 @@ export class ReaderPanel {
                 },
                 signal,
             );
-            // The bytes go to the webview, which plays them from a Blob: VS Code's local-resource loader
-            // failed to serve the cached .ogg files to the audio element ("no supported source").
+            // The bytes go to the webview, which plays them from a Blob URL: no local-resource root is needed for the cache.
             await this.post({ type: "audio", id, data: new Uint8Array(await readFile(file)), spend: this.spend() });
         } catch (error) {
             if (!signal.aborted) {

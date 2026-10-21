@@ -16,7 +16,7 @@ function fakeInworld() {
     const fetchImpl = async (url, init) => {
         const body = JSON.parse(init.body);
         calls.push({ url, body, auth: init.headers.Authorization });
-        return new Response(JSON.stringify({ audioContent: Buffer.from("OggS fake audio").toString("base64"), usage: { processedCharactersCount: body.text.length, modelId: body.modelId } }), { status: 200 });
+        return new Response(JSON.stringify({ audioContent: Buffer.from("ID3 fake audio").toString("base64"), usage: { processedCharactersCount: body.text.length, modelId: body.modelId } }), { status: 200 });
     };
     return { calls, fetchImpl };
 }
@@ -40,7 +40,7 @@ test("document text and the API key never reach telemetry or the spend ledger", 
     const { dir, synthesizer, job } = setup();
     await synthesizer.ensure(job);
     await synthesizer.ensure(job);
-    for (const file of allFiles(dir).filter((f) => !f.endsWith(".ogg"))) {
+    for (const file of allFiles(dir).filter((f) => !f.endsWith(".mp3"))) {
         const content = readFileSync(file, "utf8");
         assert.ok(!content.includes(MARKER), `${file} contains document text`);
         assert.ok(!content.includes(KEY), `${file} contains the API key`);

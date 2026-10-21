@@ -24,7 +24,7 @@ export class Synthesizer {
     }
 
     async ensure(job: SynthJob, signal?: AbortSignal): Promise<string> {
-        const file = join(this.cacheDir, `${cacheKey(job)}.ogg`);
+        const file = join(this.cacheDir, `${cacheKey(job)}.mp3`);
         const base = { type: "synth" as const, model: job.modelId, voice: job.voiceId, language: job.language, doc: job.doc, charsSent: job.text.length };
         if (existsSync(file)) {
             this.telemetry.record({ ...base, charsBilled: 0, costUsd: 0, cacheHit: true, totalMs: 0, audioMs: 0 });

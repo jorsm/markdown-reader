@@ -126,7 +126,7 @@
         audio.playbackRate = speed();
         audio.play().catch((error) => {
             pause();
-            post({ type: "playbackError", message: `${error.message} (Ogg Opus support in this VS Code: ${audio.canPlayType('audio/ogg; codecs="opus"') || "none"})` });
+            post({ type: "playbackError", message: error.message });
         });
     }
 
@@ -253,7 +253,7 @@
                 break;
             case "audio":
                 if (!audioById.has(data.id)) {
-                    audioById.set(data.id, URL.createObjectURL(new Blob([data.data], { type: "audio/ogg; codecs=opus" })));
+                    audioById.set(data.id, URL.createObjectURL(new Blob([data.data], { type: "audio/mpeg" })));
                 }
                 showSpend(data.spend);
                 if (playing && units[index]?.id === data.id && audio.paused) {

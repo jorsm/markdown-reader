@@ -1,4 +1,5 @@
 const API = "https://api.inworld.ai/tts/v1";
+const MP3_BIT_RATE = 64000;
 
 export interface SynthRequest {
     text: string;
@@ -10,7 +11,7 @@ export interface SynthRequest {
 }
 
 export interface SynthResult {
-    /** Ogg Opus audio. */
+    /** MP3 audio, constant bit rate. */
     audio: Buffer;
     charsBilled: number;
     totalMs: number;
@@ -47,7 +48,8 @@ export class InworldClient {
             voiceId: request.voiceId,
             modelId: request.modelId,
             language: request.language,
-            audioConfig: { audioEncoding: "OGG_OPUS", bitRate: 32000 },
+            // MP3, not Ogg Opus: VS Code's webview cannot decode Opus (tested in VS Code 1.142).
+            audioConfig: { audioEncoding: "MP3", bitRate: MP3_BIT_RATE },
         };
         if (request.context.length) {
             body.synthesisContext = { previousRequests: request.context.map((text) => ({ text })) };
@@ -58,7 +60,7 @@ export class InworldClient {
             audio,
             charsBilled: Number(json.usage?.processedCharactersCount ?? 0),
             totalMs: Math.round(performance.now() - started),
-            audioMs: oggOpusDurationMs(audio),
+            audioMs: mp3DurationMs(audio),
         };
     }
 
@@ -82,14 +84,7 @@ export class InworldClient {
     }
 }
 
-/** Duration from the last Ogg page's granule position (48 kHz for Opus), minus the encoder's pre-skip. */
-export function oggOpusDurationMs(ogg: Buffer): number {
-    const last = ogg.lastIndexOf("OggS");
-    const head = ogg.indexOf("OpusHead");
-    if (last < 0 || last + 14 > ogg.length) {
-        return 0;
-    }
-    const granule = Number(ogg.readBigUInt64LE(last + 6));
-    const preSkip = head >= 0 && head + 12 <= ogg.length ? ogg.readUInt16LE(head + 10) : 0;
-    return Math.max(0, Math.round((granule - preSkip) / 48));
+/** Duration of constant-bit-rate MP3 from its size; close enough for telemetry. */
+export function mp3DurationMs(mp3: Buffer): number {
+    return Math.round((mp3.length * 8 * 1000) / MP3_BIT_RATE);
 }

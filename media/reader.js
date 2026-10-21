@@ -35,6 +35,9 @@
     let pauseTimer = 0;
     let stalls = 0;
     let played = 0;
+    /** True when the extension plays audio with ffplay; the panel then only sends commands and shows progress. */
+    let native = false;
+    let nativePaused = false;
 
     const speed = () => SPEEDS[speedIndex];
 
@@ -89,6 +92,15 @@
     }
 
     function start(i) {
+        if (native) {
+            index = i;
+            playing = true;
+            nativePaused = false;
+            playButton.textContent = "⏸";
+            highlight();
+            post({ type: "start", id: units[i].id, speed: speed() });
+            return;
+        }
         clearTimeout(pauseTimer);
         audio.pause();
         index = i;
@@ -138,6 +150,10 @@
     }
 
     function pause() {
+        if (native && playing) {
+            nativePaused = true;
+            post({ type: "pause" });
+        }
         playing = false;
         clearTimeout(pauseTimer);
         audio.pause();
@@ -180,6 +196,11 @@
     playButton.addEventListener("click", () => {
         if (playing) {
             pause();
+        } else if (native && nativePaused) {
+            nativePaused = false;
+            playing = true;
+            playButton.textContent = "⏸";
+            post({ type: "resume" });
         } else {
             start(Math.max(index, 0));
         }
@@ -190,6 +211,9 @@
     function changeSpeed(delta) {
         speedIndex = Math.min(SPEEDS.length - 1, Math.max(0, speedIndex + delta));
         showSpeed();
+        if (native) {
+            post({ type: "speed", value: speed() });
+        }
     }
 
     languageSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: "" }));
@@ -221,6 +245,7 @@
                 const current = units[index];
                 doc.innerHTML = data.html;
                 units = data.units;
+                native = data.native;
                 if (current) {
                     const same = units.findIndex((u) => u.id === current.id);
                     index = same >= 0 ? same : units.findIndex((u) => u.line >= current.line);
@@ -256,9 +281,23 @@
                     audioById.set(data.id, URL.createObjectURL(new Blob([data.data], { type: "audio/mpeg" })));
                 }
                 showSpend(data.spend);
-                if (playing && units[index]?.id === data.id && audio.paused) {
+                if (!native && playing && units[index]?.id === data.id && audio.paused) {
                     playCurrent();
                 }
+                break;
+            case "playing":
+                index = units.findIndex((u) => u.id === data.id);
+                status("");
+                highlight();
+                break;
+            case "waiting":
+                status("…");
+                break;
+            case "stopped":
+                playing = false;
+                nativePaused = false;
+                status("");
+                playButton.textContent = "▶";
                 break;
             case "audioError":
                 // The extension shows the error as a VS Code notification; the player only stops.

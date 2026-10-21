@@ -44,8 +44,12 @@ body {
     gap: 4px;
 }
 
+#speedSlider {
+    width: 90px;
+}
+
 #speed {
-    min-width: 3.2em;
+    min-width: 3.4em;
     text-align: center;
     font-variant-numeric: tabular-nums;
 }

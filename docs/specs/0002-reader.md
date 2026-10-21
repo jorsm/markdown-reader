@@ -1,7 +1,7 @@
 ---
 id: "0002"
 title: Reader
-description: The read-along panel for Markdown files (click a sentence, hear it from there, highlighted), its text pipeline, Inworld TTS with language and voice selection, audio cache and local telemetry.
+description: The read-along panel for Markdown files (click a sentence, hear it from there, highlighted), its text pipeline, Inworld TTS with language and voice selection, audio cache, local telemetry and spend tracking.
 status: accepted
 date: 2026-10-21
 supersedes: none
@@ -92,6 +92,7 @@ Made by the owner on 21 Oct 2026:
 - Latency is judged on the worst case (p95 and stalls), not the average.
 - Deterministic text rules first, structured so an LLM processor can replace them.
 - Minimal local telemetry from the first deliverable.
+- Spend is tracked locally, from the characters Inworld reports as processed, so the owner can see what reading costs without opening the Inworld portal.
 - Engine: Inworld. Default model `inworld-tts-2-flash` (fastest and cheapest; its lack of steering does not matter for verbatim narration); `inworld-tts-2` is selectable. D3 confirms the default on the worst case.
 - Language and voice are chosen in the panel.
 
@@ -135,17 +136,24 @@ Made by the owner on 21 Oct 2026:
 ### Telemetry
 
 - Local only: JSON Lines files in the extension's global storage, one per day, deleted after 30 days. Nothing is sent anywhere.
-- Events carry metadata only, never document text: `synth` (engine, model, voice, language, characters, cache hit, time to first byte, total time, audio duration, error code), `play_start` (click to first sound), `stall` (wait time, speed, units ready), `session_end` (units played, speed, stall count).
+- Events carry metadata only, never document text: `synth` (engine, model, voice, language, characters sent, characters billed, estimated cost, cache hit, time to first byte, total time, audio duration, error code), `play_start` (click to first sound), `stall` (wait time, speed, units ready), `session_end` (units played, speed, stall count).
 - **Markdown Reader: Show Telemetry Summary** prints p50 and p95 per engine and the stall count per session in an output channel.
+
+### Spend
+
+- **Characters billed** are Inworld's own count: `result.usage.processedCharactersCount` in the first message of each stream. Inworld bills characters as sent, tags included; `synthesisContext` is not billed. A cache hit bills nothing.
+- **Estimated cost** is characters billed times the model's rate per million characters, from the setting `markdownReader.pricePerMillionCharacters`. Its default is the on-demand list price on 21 Oct 2026: `inworld-tts-2-flash` 15 $, `inworld-tts-2` 25 $. Inworld's prices change and higher plans pay less, so the setting is the place to correct them; the figure is an estimate, and the Inworld portal's usage page remains the authority.
+- A **spend ledger** keeps one total per day and model (characters billed, estimated cost, requests, cache hits) in the extension's global storage. Unlike the raw events it is never deleted, so month and all-time totals survive the 30-day telemetry retention.
+- The panel toolbar shows the estimated spend of the current session and of the current month. The summary command adds spend per day for the last 30 days, per month, per model, and per document (by workspace-relative path; the path is metadata, the content is not recorded).
 
 ## Deliverables
 
-- [ ] D1. Telemetry writer, retention and the event schema above, with a test that a document's text never reaches the files.
+- [ ] D1. Telemetry writer, retention, the event schema above and the spend ledger, with a test that a document's text never reaches the files.
 - [ ] D2. Markdown to units, the segment format, the `TextProcessor` interface, the deterministic processor and the verbatim guard, tested on real specs.
 - [ ] D3. `scripts/tts-bench.mjs` and its results: see below.
 - [ ] D4. The Inworld adapter, the voice list, the key command and the audio cache.
-- [ ] D5. The panel and player: rendering, language and voice selectors, click to play, highlight, keys, jump to source, re-render on save, scheduling, inserted pauses, `stall` and `play_start` events.
-- [ ] D6. The telemetry summary command and a local `.vsix` build.
+- [ ] D5. The panel and player: rendering, language and voice selectors, the spend display, click to play, highlight, keys, jump to source, re-render on save, scheduling, inserted pauses, `stall` and `play_start` events.
+- [ ] D6. The telemetry and spend summary command and a local `.vsix` build.
 
 ### D3. Inworld benchmark
 
@@ -155,7 +163,7 @@ Made by the owner on 21 Oct 2026:
 - Input: the first 40 units of a given Markdown file, through the D2 pipeline and the D4 adapter's request builder.
 - Measures per request: time to first byte (streaming where the engine offers it), total time, audio duration. Runs once sequentially and once with 3 requests in flight.
 - Simulates playback at 1×, 2× and 2.5× with N=6 and C=3 from the measured times, and counts stalls.
-- Writes measurements as telemetry `synth` events and audio samples to a directory outside the repo, for listening side by side.
+- Writes measurements as telemetry `synth` events and audio samples to a directory outside the repo, for listening side by side, and prints the characters billed and estimated cost of the run.
 - The branch that delivers D3 adds a `## Benchmark results` section to this spec (p50/p95 per variant, stalls per speed, characters billed) and records the default model and the `synthesisContext` and normalization settings under Decisions.
 
 ## Acceptance checks
@@ -165,6 +173,8 @@ Made by the owner on 21 Oct 2026:
 - A processor that returns altered words for a unit is replaced by the deterministic output for that unit, and a log line records it. Catches a guard that only logs.
 - Editing one sentence and saving re-synthesizes exactly one unit (telemetry: one `synth` with `cacheHit: false`). Catches unit ids that shift after an edit.
 - Reading spec 0001 of `vertex-ai-models-chat-provider` from the first unit to the end at 2.5×, cache empty, records zero `stall` events after the first unit. Catches scheduling that keeps up on average but not in the worst case.
+- A day's characters billed in the spend ledger equal the characters Inworld's portal reports for that day, checked once by hand after D5. Catches counting characters sent instead of characters billed, or missing failed-but-billed requests.
+- Replaying a fully cached document adds no characters billed and no cost to the ledger. Catches cache hits counted as spend.
 - Click to first sound: p95 at most 1 s with the cache empty, at most 200 ms with the cache warm (telemetry `play_start`). Catches a slow start.
 - Changing speed during playback makes no `synth` request. Catches speed applied by the engine instead of the player.
 - Switching the voice and back plays the earlier units from the cache (`cacheHit: true`). Catches a cache key that ignores the voice.
@@ -172,6 +182,7 @@ Made by the owner on 21 Oct 2026:
 
 ## Open questions
 
+- Should a monthly budget (e.g. `markdownReader.monthlyBudgetUsd`) warn or stop synthesis when reached, or is seeing the spend enough?
 - Latency targets: are 1 s (cold) and 200 ms (warm) for click to first sound the right bar?
 - Code blocks: skip silently (current proposal), or read them?
 - Should the panel follow the editor's cursor (click in the source to set the start point), or is the button-plus-click flow enough for now?

@@ -2,6 +2,8 @@ import js from "@eslint/js";
 import typescriptEslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
+import jsdoc from "eslint-plugin-jsdoc";
+import tsdoc from "eslint-plugin-tsdoc";
 
 const sourceFiles = ["src/**/*.ts"];
 
@@ -66,6 +68,27 @@ export default [
                     message: "Log the failure, or disable this rule with a comment saying why ignoring it is safe.",
                 },
             ],
+        },
+    },
+    // AGENTS.md: exported declarations have a TSDoc comment (what it does and why); tsdoc/syntax keeps the comments valid TSDoc.
+    {
+        files: sourceFiles,
+        plugins: { jsdoc, tsdoc },
+        rules: {
+            "jsdoc/require-jsdoc": [
+                "error",
+                {
+                    publicOnly: true,
+                    require: { FunctionDeclaration: true, ClassDeclaration: true, MethodDefinition: true },
+                    checkConstructors: false,
+                    contexts: [
+                        "TSInterfaceDeclaration",
+                        "TSTypeAliasDeclaration",
+                        "ExportNamedDeclaration > VariableDeclaration",
+                    ],
+                },
+            ],
+            "tsdoc/syntax": "error",
         },
     },
     eslintConfigPrettier,

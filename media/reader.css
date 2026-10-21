@@ -1,0 +1,109 @@
+body {
+    padding: 0;
+    color: var(--vscode-foreground);
+    background: var(--vscode-editor-background);
+    font-family: var(--vscode-markdown-font-family, var(--vscode-font-family));
+    font-size: var(--vscode-markdown-font-size, 14px);
+    line-height: var(--vscode-markdown-line-height, 1.6);
+}
+
+.toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--vscode-editorWidget-background);
+    border-bottom: 1px solid var(--vscode-widget-border, transparent);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+.toolbar button,
+.toolbar select {
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    background: var(--vscode-button-secondaryBackground, transparent);
+    border: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.toolbar select {
+    color: var(--vscode-dropdown-foreground);
+    background: var(--vscode-dropdown-background);
+    border-color: var(--vscode-dropdown-border, transparent);
+}
+
+.speed {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#speed {
+    min-width: 3.2em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+#spend,
+#status {
+    color: var(--vscode-descriptionForeground);
+    font-variant-numeric: tabular-nums;
+}
+
+#status {
+    margin-left: auto;
+}
+
+main {
+    max-width: 880px;
+    padding: 8px 26px 40vh;
+}
+
+.u {
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.u:hover {
+    background: var(--vscode-editor-hoverHighlightBackground);
+}
+
+.u.playing {
+    background: var(--vscode-editor-findMatchHighlightBackground);
+    outline: 1px solid var(--vscode-editor-findMatchHighlightBorder, transparent);
+}
+
+table {
+    border-collapse: collapse;
+}
+
+th,
+td {
+    border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+    padding: 4px 8px;
+    vertical-align: top;
+}
+
+code {
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
+    background: var(--vscode-textCodeBlock-background);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+pre code {
+    display: block;
+    padding: 8px 12px;
+    overflow-x: auto;
+}
+
+a {
+    color: var(--vscode-textLink-foreground);
+}

@@ -4,7 +4,7 @@ Instructions for coding agents (Claude Code first; Codex and VS Code Copilot cha
 
 ## What this is
 
-A VS Code extension ("Markdown Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. The reader is not built yet: until its spec is accepted and implemented, `src/extension.ts` is an empty activation.
+A VS Code extension ("Markdown Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. Speech comes from Inworld TTS; spec 0002 governs the reader. The current code is a draft that validates the idea; its deliverables are rebuilt one PR at a time.
 
 ## Before you change anything
 
@@ -16,8 +16,13 @@ Don't create new Markdown outside `docs/specs/`, `.claude/skills/`, `AGENTS.md`,
 
 ## Map
 
-- `src/extension.ts` — activation and command registration
-- `test/` — Node test runner suites, named `<name>.test.js` (none yet); they import compiled `out/*.js`
+- `src/extension.ts` — activation, commands, the Inworld key in `SecretStorage`
+- `src/text/units.ts` — Markdown to speech units (sentences, headings, table rows), spoken text rules, synthesis context
+- `src/tts/InworldClient.ts` — Inworld REST calls (synthesis, voices)
+- `src/reader/` — `ReaderPanel` (webview, language and voice choice), `Synthesizer` (audio cache, spend), `Scheduler` (lookahead and concurrency)
+- `src/telemetry/Telemetry.ts` — local JSONL events and the spend ledger
+- `media/` — the panel's player script and styles
+- `test/` — Node test runner suites, named `<name>.test.js`; they import compiled `out/*.js` and use a fake `fetch` for Inworld
 - `scripts/` — manual tools, not run by `npm test`
 - `docs/specs/` — specs and their index
 - `.claude/` — Claude Code Stop hook and project skills (`prepare-pr`, `align-agents-md`)
@@ -53,7 +58,8 @@ Run `npm run check` before you say a change is done, and report which commands y
 ## Invariants
 
 - Repo text (specs, commits, review texts) will be public once published: no credentials, private identifiers or personal remarks.
-- Logs carry metadata (counts, sizes, durations, statuses, ids), never document text, credentials or tokens.
+- Logs and telemetry carry metadata (counts, sizes, durations, statuses, ids, document paths), never document text, credentials or tokens. `test/synthesizer.test.js` checks it.
+- The Inworld key stays in the extension host and `SecretStorage`: never in settings, files, logs or messages to the webview.
 
 ## Writing tests
 

@@ -30,6 +30,11 @@
                 "command": "markdownReader.setApiKey",
                 "title": "Set API Key",
                 "category": "Markdown Reader"
+            },
+            {
+                "command": "markdownReader.clearCache",
+                "title": "Clear Audio Cache",
+                "category": "Markdown Reader"
             }
         ],
         "menus": {

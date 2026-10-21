@@ -63,6 +63,13 @@ export class ReaderPanel {
     private speed = 1.5;
     private onResume: (() => void) | undefined;
 
+    /** Stops every panel and forgets its prepared audio: the audio cache is about to be cleared. */
+    static resetAll(): void {
+        for (const panel of ReaderPanel.panels.values()) {
+            panel.resetPlayback();
+        }
+    }
+
     /** Opens the panel for `document`, or reveals the one already open. */
     static show(context: vscode.ExtensionContext, document: vscode.TextDocument, deps: Deps): void {
         const existing = ReaderPanel.panels.get(document.uri.toString());
@@ -398,7 +405,7 @@ export class ReaderPanel {
 <body>
 <header class="toolbar">
   <button id="play" title="Play / pause (Space)">▶</button>
-  <span class="speed"><button id="slower" title="Slower (-)">−</button><span id="speed">1.0×</span><button id="faster" title="Faster (+)">+</button></span>
+  <span class="speed"><button id="slower" title="Slower by 0.1 (-)">−</button><input type="range" id="speedSlider" min="0.75" max="3" step="0.05" title="Speed"><span id="speed">1.50×</span><button id="faster" title="Faster by 0.1 (+)">+</button></span>
   <select id="language" title="Language"></select>
   <select id="voice" title="Voice"></select>
   <select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"></select>

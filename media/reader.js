@@ -3,19 +3,13 @@
 // asks this panel to play each unit's audio and waits for its `ended` message.
 (function () {
     const vscode = acquireVsCodeApi();
-    const SPEEDS = [
-        1,
-        1.25,
-        1.5,
-        1.75,
-        2,
-        2.25,
-        2.5,
-    ];
+    const MIN_SPEED = 0.75;
+    const MAX_SPEED = 3;
 
     const doc = document.getElementById("doc");
     const playButton = document.getElementById("play");
     const speedLabel = document.getElementById("speed");
+    const speedSlider = document.getElementById("speedSlider");
     const languageSelect = document.getElementById("language");
     const voiceSelect = document.getElementById("voice");
     const modelSelect = document.getElementById("model");
@@ -23,14 +17,14 @@
     const statusLabel = document.getElementById("status");
     const audio = new Audio();
 
-    let speedIndex = (vscode.getState() || {}).speedIndex ?? 2;
+    let currentSpeed = Number((vscode.getState() || {}).speed) || 1.5;
     let units = [];
     let currentId;
     let state = "stopped";
     let audioToken = 0;
     let audioUrl;
 
-    const speed = () => SPEEDS[speedIndex];
+    const speed = () => currentSpeed;
     const post = (message) => vscode.postMessage(message);
     const indexOf = (id) => units.findIndex((u) => u.id === id);
 
@@ -52,14 +46,16 @@
     }
 
     function showSpeed() {
-        speedLabel.textContent = `${speed().toFixed(2).replace(/0$/, "")}×`;
-        vscode.setState({ speedIndex });
+        speedLabel.textContent = `${currentSpeed.toFixed(2)}×`;
+        speedSlider.value = String(currentSpeed);
+        vscode.setState({ speed: currentSpeed });
     }
 
-    function changeSpeed(delta) {
-        speedIndex = Math.min(SPEEDS.length - 1, Math.max(0, speedIndex + delta));
+    /** Sets the speed, rounded to 0.05 within the allowed range, and tells the extension. */
+    function setSpeed(value) {
+        currentSpeed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(value * 20) / 20));
         showSpeed();
-        post({ type: "speed", value: speed() });
+        post({ type: "speed", value: currentSpeed });
     }
 
     function showSpend(spend) {
@@ -126,14 +122,15 @@
             start(currentId || units[0]?.id);
         }
     });
-    document.getElementById("slower").addEventListener("click", () => changeSpeed(-1));
-    document.getElementById("faster").addEventListener("click", () => changeSpeed(1));
+    document.getElementById("slower").addEventListener("click", () => setSpeed(currentSpeed - 0.1));
+    document.getElementById("faster").addEventListener("click", () => setSpeed(currentSpeed + 0.1));
+    speedSlider.addEventListener("input", () => setSpeed(Number(speedSlider.value)));
     languageSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: "" }));
     voiceSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: voiceSelect.value }));
     modelSelect.addEventListener("change", () => post({ type: "model", value: modelSelect.value }));
 
     document.addEventListener("keydown", (event) => {
-        if (event.target instanceof HTMLSelectElement) {
+        if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) {
             return;
         }
         const i = indexOf(currentId);
@@ -145,9 +142,9 @@
         } else if (event.key === "ArrowLeft" && i > 0) {
             start(units[i - 1].id);
         } else if (event.key === "+" || event.key === "=") {
-            changeSpeed(1);
+            setSpeed(currentSpeed + 0.1);
         } else if (event.key === "-") {
-            changeSpeed(-1);
+            setSpeed(currentSpeed - 0.1);
         } else if (event.key.toLowerCase() === "e") {
             reveal(currentId);
         }

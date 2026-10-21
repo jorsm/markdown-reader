@@ -32,7 +32,7 @@ Open any Markdown file in a reading panel next to the editor, click a sentence, 
 - Offline or local TTS engines (CPU latency of small open models is too high; see Considered options).
 - Several voices in one document, voice cloning or voice design.
 - Word-level highlighting. Inworld can return word timestamps (`timestampType: WORD`); a later spec can use them.
-- Publishing to the Marketplace (spec 0001 D7).
+- Publishing to the Marketplace.
 
 ## Considered options
 

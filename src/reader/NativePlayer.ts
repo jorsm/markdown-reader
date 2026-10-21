@@ -2,6 +2,14 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import type { AudioOutput, PlayResult } from "./AudioOutput";
 
 /**
+ * After this long without audio, the system may have suspended the output device (PipeWire does by
+ * default), and waking it swallows the first ~100 ms of what plays next.
+ */
+const IDLE_MS = 1000;
+/** Silence played before a unit that starts on an idle device, so the wake-up eats silence, not speech. */
+const LEAD_IN_MS = 150;
+
+/**
  * Plays audio files with ffplay from the extension host. VS Code's webview can't be relied on for
  * sound: the snap build's Chromium has no PulseAudio/PipeWire output, so audio "plays" in silence.
  * Speed uses ffmpeg's atempo filter, which keeps the pitch.
@@ -9,19 +17,22 @@ import type { AudioOutput, PlayResult } from "./AudioOutput";
 export class NativePlayer implements AudioOutput {
     private process: ChildProcess | undefined;
     private paused = false;
+    /** When the last unit finished, to tell whether the audio device has gone idle since. */
+    private lastEndedAt = 0;
 
     private constructor(private readonly binary: string) {}
 
     /** The player, or why ffplay can't be used (not on the PATH, or it fails to run). */
     static async find(binary = "ffplay"): Promise<{ player: NativePlayer } | { error: string }> {
         return new Promise((resolve) => {
-            execFile(binary, ["-version"], { env: hostEnv(), timeout: 5000 }, (error, _stdout, stderr) => resolve(error ? { error: `${error.message} ${String(stderr).trim().slice(-300)}`.trim() } : { player: new NativePlayer(binary) }));
+            execFile(binary, ["-version"], { env: hostEnv(), timeout: 5000 }, (error, _stdout, stderr) => resolve(error ? { error: `${error.message} ${tail(String(stderr))}`.trim() } : { player: new NativePlayer(binary) }));
         });
     }
 
     /** Starts ffplay on `file` at `speed` (atempo keeps the pitch); stops whatever was playing. */
     play(file: string, speed: number): Promise<PlayResult> {
         this.stop();
+        const leadIn = performance.now() - this.lastEndedAt > IDLE_MS ? LEAD_IN_MS : 0;
         const child = spawn(
             this.binary,
             [
@@ -30,7 +41,7 @@ export class NativePlayer implements AudioOutput {
                 "-loglevel",
                 "error",
                 "-af",
-                `atempo=${speed}`,
+                leadIn ? `atempo=${speed},adelay=${leadIn}:all=1` : `atempo=${speed}`,
                 file,
             ],
             {
@@ -56,6 +67,7 @@ export class NativePlayer implements AudioOutput {
                 if (stoppedByUs) {
                     resolve("stopped");
                 } else if (code === 0) {
+                    this.lastEndedAt = performance.now();
                     resolve("ended");
                 } else {
                     reject(new Error(`ffplay exited with code ${code}: ${tail(stderr) || "no output"}`));

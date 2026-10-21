@@ -1,0 +1,10 @@
+# Local branch protection (spec 0001 D5): no direct commits on develop or main.
+# Merges into them are allowed: `git merge --no-ff` runs no pre-commit hook, and a
+# merge finished by hand after a conflict has MERGE_HEAD set.
+branch=$(git symbolic-ref --short -q HEAD)
+if { [ "$branch" = "develop" ] || [ "$branch" = "main" ]; } && [ ! -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    echo "Direct commits on $branch are blocked. Cut a branch from develop (see AGENTS.md)." >&2
+    exit 1
+fi
+
+npx --no-install lint-staged

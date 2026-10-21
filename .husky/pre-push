@@ -1,0 +1,11 @@
+# Local branch protection (spec 0001 D5): develop and main are never pushed directly.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    case "$remote_ref" in
+        refs/heads/develop | refs/heads/main)
+            echo "Pushing to ${remote_ref#refs/heads/} is blocked. Push a branch and open a PR (see AGENTS.md)." >&2
+            exit 1
+            ;;
+    esac
+done
+
+npm run check

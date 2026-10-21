@@ -1,0 +1,15 @@
+# Dependencies, generated output, and local test workspaces
+node_modules/
+out/
+dist/
+.vscode-test/
+*.vsix
+
+# Agent worktrees: other branches' checkouts, each checked in its own tree
+.claude/worktrees/
+
+# Machine-maintained files
+package-lock.json
+
+# Written for agents, not humans: keep tables unpadded to save context tokens
+AGENTS.md

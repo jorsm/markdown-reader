@@ -131,6 +131,12 @@ Made by the owner on 21 Oct 2026:
 - From the playing unit, the next N units (default 6) are prepared with up to C requests in flight (default 3). A click elsewhere cancels in-flight requests outside the new window.
 - Speed is applied by the player with pitch preserved. Changing speed never re-synthesizes.
 - The Inworld key is kept in `SecretStorage` (command **Markdown Reader: Set API Key**). It stays in the extension host: the webview never sees it, and it is never written to settings, logs or telemetry.
+- **The key is validated when it is entered**, before it is stored, with a call that synthesizes nothing and bills nothing (the voice list):
+    - accepted (200): stored, and the open panels reload their voice list;
+    - rejected (401 or 403): not stored; the error says Inworld rejected the key and offers to enter it again. The previously stored key, if any, stays;
+    - not checkable (network error, timeout, 5xx): stored, with a warning that it could not be verified. A wrong key then shows up at the first request.
+- Before the call, the input is trimmed and checked to be Base64 that decodes to `key:secret`, the shape of the portal's Basic credential; anything else is refused without calling Inworld.
+- A request that fails later with 401 or 403 (key revoked or deleted) pauses playback and offers to enter a new key; it is not retried.
 - The text of the file goes to the chosen engine's provider and nowhere else.
 
 ### Telemetry
@@ -179,6 +185,8 @@ Made by the owner on 21 Oct 2026:
 - Changing speed during playback makes no `synth` request. Catches speed applied by the engine instead of the player.
 - Switching the voice and back plays the earlier units from the cache (`cacheHit: true`). Catches a cache key that ignores the voice.
 - The Inworld key appears in no file under the extension's storage, no log line and no message to the webview (search for it after a session). Catches a leaked credential.
+- Entering a key Inworld rejects leaves the stored key unchanged and shows the rejection; entering a malformed key makes no request. Catches a wrong key replacing a working one, or a typo reaching Inworld.
+- With the network down, entering a key stores it with a warning. Catches a validation that blocks setup offline.
 
 ## Open questions
 

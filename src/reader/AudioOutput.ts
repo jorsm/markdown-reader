@@ -7,11 +7,12 @@ export type PlayResult = "ended" | "stopped";
 export interface AudioOutput {
     /** Plays a file to its end ("ended"), or until `stop` ("stopped"); rejects if it can't play. */
     play(file: string, speed: number): Promise<PlayResult>;
+    /** Pauses the unit playing now; `play` stays pending until it is resumed and ends, or is stopped. */
     pause(): void;
+    /** Resumes a paused unit. */
     resume(): void;
+    /** Ends the unit playing now: its `play` promise resolves "stopped". */
     stop(): void;
-    /** Applies a new speed to the unit playing now, when the output can. */
-    setSpeed(speed: number): void;
 }
 
 /**
@@ -62,9 +63,5 @@ export class WebviewOutput implements AudioOutput {
         this.pending?.resolve("stopped");
         this.pending = undefined;
         void this.post({ type: "stopAudio" });
-    }
-
-    setSpeed(speed: number): void {
-        void this.post({ type: "speed", value: speed });
     }
 }

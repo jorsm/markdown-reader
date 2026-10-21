@@ -3,8 +3,8 @@
 // asks this panel to play each unit's audio and waits for its `ended` message.
 (function () {
     const vscode = acquireVsCodeApi();
-    const MIN_SPEED = 0.75;
-    const MAX_SPEED = 3;
+    /** How much the − and + buttons and keys change the speed; the slider's range and step come from the extension. */
+    const SPEED_STEP = 0.1;
 
     const doc = document.getElementById("doc");
     const playButton = document.getElementById("play");
@@ -17,14 +17,13 @@
     const statusLabel = document.getElementById("status");
     const audio = new Audio();
 
-    let currentSpeed = Number((vscode.getState() || {}).speed) || 1.5;
+    let speed = 1.5;
     let units = [];
     let currentId;
     let state = "stopped";
     let audioToken = 0;
     let audioUrl;
 
-    const speed = () => currentSpeed;
     const post = (message) => vscode.postMessage(message);
     const indexOf = (id) => units.findIndex((u) => u.id === id);
 
@@ -41,21 +40,29 @@
     }
 
     function setRate() {
-        audio.defaultPlaybackRate = speed();
-        audio.playbackRate = speed();
+        audio.defaultPlaybackRate = speed;
+        audio.playbackRate = speed;
     }
 
     function showSpeed() {
-        speedLabel.textContent = `${currentSpeed.toFixed(2)}×`;
-        speedSlider.value = String(currentSpeed);
-        vscode.setState({ speed: currentSpeed });
+        speedLabel.textContent = `${speed.toFixed(2)}×`;
     }
 
-    /** Sets the speed, rounded to 0.05 within the allowed range, and tells the extension. */
-    function setSpeed(value) {
-        currentSpeed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(value * 20) / 20));
-        showSpeed();
-        post({ type: "speed", value: currentSpeed });
+    /**
+     * Sets the speed through the slider, which clamps it to its range and snaps it to its step, and applies it
+     * to the panel's audio at once. `remember` sends it to the extension, which keeps it for every panel.
+     */
+    function setSpeed(value, remember) {
+        speedSlider.value = String(value);
+        const next = Number(speedSlider.value);
+        if (next !== speed) {
+            speed = next;
+            showSpeed();
+            setRate();
+        }
+        if (remember) {
+            post({ type: "speed", value: speed });
+        }
     }
 
     function showSpend(spend) {
@@ -94,7 +101,7 @@
 
     function start(id) {
         if (id) {
-            post({ type: "start", id, speed: speed() });
+            post({ type: "start", id });
         }
     }
 
@@ -122,9 +129,15 @@
             start(currentId || units[0]?.id);
         }
     });
-    document.getElementById("slower").addEventListener("click", () => setSpeed(currentSpeed - 0.1));
-    document.getElementById("faster").addEventListener("click", () => setSpeed(currentSpeed + 0.1));
-    speedSlider.addEventListener("input", () => setSpeed(Number(speedSlider.value)));
+    document.getElementById("slower").addEventListener("click", () => setSpeed(speed - SPEED_STEP, true));
+    document.getElementById("faster").addEventListener("click", () => setSpeed(speed + SPEED_STEP, true));
+    // While dragging, only the label and the panel's audio follow; the extension hears the final value.
+    speedSlider.addEventListener("input", () => setSpeed(Number(speedSlider.value), false));
+    speedSlider.addEventListener("change", () => {
+        setSpeed(Number(speedSlider.value), true);
+        // Give the keyboard back to the reader: Space, arrows and +/− would otherwise drive the slider.
+        speedSlider.blur();
+    });
     languageSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: "" }));
     voiceSelect.addEventListener("change", () => post({ type: "choose", language: languageSelect.value, voice: voiceSelect.value }));
     modelSelect.addEventListener("change", () => post({ type: "model", value: modelSelect.value }));
@@ -142,9 +155,9 @@
         } else if (event.key === "ArrowLeft" && i > 0) {
             start(units[i - 1].id);
         } else if (event.key === "+" || event.key === "=") {
-            setSpeed(currentSpeed + 0.1);
+            setSpeed(speed + SPEED_STEP, true);
         } else if (event.key === "-") {
-            setSpeed(currentSpeed - 0.1);
+            setSpeed(speed - SPEED_STEP, true);
         } else if (event.key.toLowerCase() === "e") {
             reveal(currentId);
         }
@@ -166,6 +179,7 @@
     window.addEventListener("message", ({ data }) => {
         switch (data.type) {
             case "render":
+                setSpeed(data.speed, false);
                 doc.innerHTML = data.html;
                 units = data.units;
                 highlight();
@@ -236,12 +250,8 @@
                 audioToken = 0;
                 audio.pause();
                 break;
-            case "speed":
-                setRate();
-                break;
         }
     });
 
-    showSpeed();
     post({ type: "ready" });
 })();

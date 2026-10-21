@@ -81,3 +81,16 @@ test("the month total counts the first spend of the month once", async () => {
     assert.equal(telemetry.monthSpend().charsBilled, job.text.length);
     assert.equal(telemetry.sessionSpend().charsBilled, job.text.length);
 });
+
+test("clearing the cache tells listeners first, then deletes every audio file", async () => {
+    const { dir, calls, synthesizer, job } = setup();
+    await synthesizer.ensure(job);
+    assert.deepEqual(await synthesizer.stats(), { files: 1, bytes: Buffer.from("ID3 fake audio").length });
+    let filesWhenNotified;
+    synthesizer.onDidClear(() => (filesWhenNotified = readdirSync(join(dir, "audio")).length));
+    await synthesizer.clear();
+    assert.equal(filesWhenNotified, 1, "listeners run before the files are deleted, so playback stops first");
+    assert.deepEqual(await synthesizer.stats(), { files: 0, bytes: 0 });
+    await synthesizer.ensure(job);
+    assert.equal(calls.length, 2, "a cleared unit is synthesized again");
+});

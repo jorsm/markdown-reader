@@ -71,4 +71,5 @@ Run `npm run check` before you say a change is done, and report which commands y
 ## Writing code
 
 - No `.catch(() => {})` without a comment saying why the failure is safe to ignore. Lint enforces this: put the reason in `// eslint-disable-next-line no-restricted-syntax -- <reason>`, or log the failure instead.
+- Exported functions, classes, public methods, interfaces, types and constants have a TSDoc comment (`/** … */`) that says what they do and why, not how. Lint enforces it: `require-jsdoc` from eslint-plugin-jsdoc, `syntax` from eslint-plugin-tsdoc. Comment private code only where the name and types don't explain it.
 - Match the existing style; Prettier and ESLint are authoritative. `any` is allowed for SDK and HTTP payloads only.

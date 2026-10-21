@@ -5,7 +5,7 @@ import { contextFor, renderDocument, type Unit } from "../text/units";
 import { InworldError, type InworldClient, type Voice } from "../tts/InworldClient";
 import { WebviewOutput, type AudioOutput } from "./AudioOutput";
 import { NotWantedError, Scheduler } from "./Scheduler";
-import { errorMessage, type Synthesizer } from "./Synthesizer";
+import { errorMessage, exists, type Synthesizer } from "./Synthesizer";
 
 /** Inworld's tier-1 languages, English first. */
 export const LANGUAGES: Record<string, string> = {
@@ -30,6 +30,8 @@ export const LANGUAGES: Record<string, string> = {
 export const MODELS: Record<string, string> = { "inworld-tts-2-flash": "Flash", "inworld-tts-2": "TTS-2" };
 
 const DEFAULT_VOICES: Record<string, string> = { en: "Jason", it: "Orietta" };
+/** The speed range and step of the toolbar slider, and the speed before the owner picks one. */
+const SPEED = { min: 0.75, max: 3, step: 0.05, initial: 1.5 };
 /** Silence after each kind of unit at 1×, in milliseconds; divided by the speed. */
 const PAUSE_MS: Record<string, number> = { heading: 650, sentence: 280, row: 200 };
 
@@ -60,15 +62,8 @@ export class ReaderPanel {
     /** Bumped by every start and stop, so a superseded playback sequence ends quietly. */
     private session = 0;
     private state: PlaybackState = "stopped";
-    private speed = 1.5;
+    private speed: number;
     private onResume: (() => void) | undefined;
-
-    /** Stops every panel and forgets its prepared audio: the audio cache is about to be cleared. */
-    static resetAll(): void {
-        for (const panel of ReaderPanel.panels.values()) {
-            panel.resetPlayback();
-        }
-    }
 
     /** Opens the panel for `document`, or reveals the one already open. */
     static show(context: vscode.ExtensionContext, document: vscode.TextDocument, deps: Deps): void {
@@ -85,6 +80,7 @@ export class ReaderPanel {
         private readonly document: vscode.TextDocument,
         private readonly deps: Deps,
     ) {
+        this.speed = context.globalState.get<number>("markdownReader.speed") ?? SPEED.initial;
         this.choice = context.workspaceState.get<Choice>(choiceKey(document)) ?? context.globalState.get<Choice>("markdownReader.lastChoice") ?? { language: "en", voice: DEFAULT_VOICES.en! };
         this.panel = vscode.window.createWebviewPanel(
             "markdownReader",
@@ -102,6 +98,7 @@ export class ReaderPanel {
         this.panel.webview.html = this.html();
         this.panel.webview.onDidReceiveMessage((m) => this.onMessage(m), undefined, this.disposables);
         this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
+        this.disposables.push({ dispose: deps.synthesizer.onDidClear(() => this.resetPlayback()) });
         vscode.workspace.onDidSaveTextDocument(
             (d) => {
                 if (d === this.document) {
@@ -130,7 +127,6 @@ export class ReaderPanel {
                 await this.sendVoices();
                 break;
             case "start":
-                this.speed = Number(message.speed) || this.speed;
                 void this.playFrom(String(message.id));
                 break;
             case "pause":
@@ -140,8 +136,9 @@ export class ReaderPanel {
                 this.resume();
                 break;
             case "speed":
-                this.speed = Number(message.value) || this.speed;
-                this.output.setSpeed(this.speed);
+                // Remembered for every panel; ffplay applies it from the next unit, the panel's audio element at once.
+                this.speed = Math.min(SPEED.max, Math.max(SPEED.min, Number(message.value) || this.speed));
+                await this.context.globalState.update("markdownReader.speed", this.speed);
                 break;
             case "ended":
                 this.webviewOutput?.settle(Number(message.token));
@@ -173,7 +170,7 @@ export class ReaderPanel {
                     ] as const,
             ),
         );
-        void this.post({ type: "render", html, units: units.map(({ id, line }) => ({ id, line })), choice: this.choice, languages: LANGUAGES, models: MODELS, model: model(), spend: this.spend() });
+        void this.post({ type: "render", html, units: units.map(({ id, line }) => ({ id, line })), choice: this.choice, languages: LANGUAGES, models: MODELS, model: model(), speed: this.speed, spend: this.spend() });
     }
 
     private async sendVoices(): Promise<void> {
@@ -275,6 +272,11 @@ export class ReaderPanel {
                     void this.post({ type: "waiting" });
                 }
                 const file = await this.scheduler.ready(unit.id);
+                if (!(await exists(file))) {
+                    // The cache was cleared, perhaps from another window: prepare this unit again.
+                    this.scheduler.forget(unit.id);
+                    continue;
+                }
                 await this.whilePaused(session);
                 if (session !== this.session) {
                     return;
@@ -405,7 +407,7 @@ export class ReaderPanel {
 <body>
 <header class="toolbar">
   <button id="play" title="Play / pause (Space)">▶</button>
-  <span class="speed"><button id="slower" title="Slower by 0.1 (-)">−</button><input type="range" id="speedSlider" min="0.75" max="3" step="0.05" title="Speed"><span id="speed">1.50×</span><button id="faster" title="Faster by 0.1 (+)">+</button></span>
+  <span class="speed"><button id="slower" title="Slower (-)">−</button><input type="range" id="speedSlider" min="${SPEED.min}" max="${SPEED.max}" step="${SPEED.step}" title="Speed"><span id="speed"></span><button id="faster" title="Faster (+)">+</button></span>
   <select id="language" title="Language"></select>
   <select id="voice" title="Voice"></select>
   <select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"></select>

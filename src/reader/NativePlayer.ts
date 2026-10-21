@@ -64,9 +64,6 @@ export class NativePlayer implements AudioOutput {
         });
     }
 
-    /** ffplay's tempo is fixed per process: a new speed applies from the next unit. */
-    setSpeed(): void {}
-
     /** Freezes ffplay with SIGSTOP; the audio stream stays open, so resuming is instant. */
     pause(): void {
         if (this.process && !this.paused) {

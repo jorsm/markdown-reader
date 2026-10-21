@@ -57,6 +57,14 @@ export class Scheduler {
         return this.entries.get(id)?.state === "done";
     }
 
+    /** Forgets one unit, so the next `want` prepares it again (its file was deleted). */
+    forget(id: string): void {
+        const entry = this.entries.get(id);
+        if (entry) {
+            this.drop(id, entry);
+        }
+    }
+
     /** Forgets everything, e.g. after the voice, language or model changed. */
     reset(): void {
         for (const [

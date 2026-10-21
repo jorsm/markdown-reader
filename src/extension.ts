@@ -1,5 +1,3 @@
-import { mkdir, readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
 import * as vscode from "vscode";
 import { NativePlayer } from "./reader/NativePlayer";
 import { ReaderPanel, type Deps } from "./reader/ReaderPanel";
@@ -26,7 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
             ReaderPanel.show(context, document, await (deps ??= createDeps(context, log)));
         }),
         vscode.commands.registerCommand("markdownReader.setApiKey", () => askForKey(context)),
-        vscode.commands.registerCommand("markdownReader.clearCache", () => clearCache(vscode.Uri.joinPath(context.globalStorageUri, "audio").fsPath)),
+        vscode.commands.registerCommand("markdownReader.clearCache", async () => clearCache((await (deps ??= createDeps(context, log))).synthesizer)),
     );
 }
 
@@ -57,25 +55,17 @@ async function createDeps(context: vscode.ExtensionContext, log: vscode.LogOutpu
 }
 
 /** Deletes all cached audio after confirmation; listening again re-synthesizes, and Inworld bills it again. */
-async function clearCache(dir: string): Promise<void> {
-    // A missing directory means an empty cache.
-    const files = await readdir(dir).catch(() => [] as string[]);
-    if (!files.length) {
+async function clearCache(synthesizer: Synthesizer): Promise<void> {
+    const { files, bytes } = await synthesizer.stats();
+    if (!files) {
         void vscode.window.showInformationMessage("Markdown Reader: the audio cache is already empty.");
         return;
     }
-    let bytes = 0;
-    for (const file of files) {
-        bytes += (await stat(join(dir, file))).size;
+    const answer = await vscode.window.showWarningMessage(`Delete ${files} cached audio files (${(bytes / 1_048_576).toFixed(1)} MB)?`, { modal: true, detail: "Every sentence you listen to again is synthesized again, and Inworld bills it again." }, "Delete");
+    if (answer === "Delete") {
+        await synthesizer.clear();
+        void vscode.window.showInformationMessage(`Markdown Reader: deleted ${files} cached audio files.`);
     }
-    const answer = await vscode.window.showWarningMessage(`Delete ${files.length} cached audio files (${(bytes / 1_048_576).toFixed(1)} MB)?`, { modal: true, detail: "Every sentence you listen to again is synthesized again, and Inworld bills it again." }, "Delete");
-    if (answer !== "Delete") {
-        return;
-    }
-    ReaderPanel.resetAll();
-    await rm(dir, { recursive: true, force: true });
-    await mkdir(dir, { recursive: true });
-    void vscode.window.showInformationMessage(`Markdown Reader: deleted ${files.length} cached audio files.`);
 }
 
 async function askForKey(context: vscode.ExtensionContext): Promise<string | undefined> {

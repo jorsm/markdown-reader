@@ -120,7 +120,7 @@ Made by the owner on 21 Oct 2026:
 - Each **engine adapter** renders segments into its own markup and returns audio. The Inworld adapter:
     - streams from `POST /tts/v1/voice:stream` with `modelId`, `voiceId`, `language` and MP3 output, reading the NDJSON lines and treating an in-stream `error` as a failed request;
     - renders `pause` as `<break time="…ms" />`, at most 20 per request (Inworld ignores the rest); `emphasis` becomes plain text, since Flash has no emphasis control;
-    - sends the preceding units of the same section, up to 2,000 characters, as `synthesisContext.previousRequests`, which Inworld uses for intonation and does not bill or speak. D3 checks that it helps;
+    - sends the preceding units of the same section, at most 5 units and 2,000 characters (Inworld rejects more with a 400), as `synthesisContext.previousRequests`, which Inworld uses for intonation and does not bill or speak. D3 checks that it helps;
     - keeps the HTTP connection alive between requests.
 - Voices come from Inworld's voice list (`GET /tts/v1/voices`, or its replacement in the Voice API if equivalent), cached for a day.
 - **Pauses between units** are silence inserted by the player, by unit kind (heading longest, table row shortest), divided by the speed. They are the same for every engine.

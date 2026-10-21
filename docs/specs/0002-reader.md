@@ -1,7 +1,7 @@
 ---
 id: "0002"
 title: Reader
-description: The read-along panel for Markdown files (click a sentence, hear it from there, highlighted), its text pipeline, TTS engine choice by worst-case benchmark, audio cache and local telemetry.
+description: The read-along panel for Markdown files (click a sentence, hear it from there, highlighted), its text pipeline, Inworld TTS with language and voice selection, audio cache and local telemetry.
 status: proposed
 date: 2026-10-21
 supersedes: none
@@ -23,14 +23,15 @@ Open any Markdown file in a reading panel next to the editor, click a sentence, 
 - Specs are long. Spec 0001 of `vertex-ai-models-chat-provider` is 22,627 characters: about 25 minutes of speech at 1×, 10 at 2.5×. Most of it needs following, not studying; listening while following the text is faster than reading and keeps attention on each sentence.
 - An earlier read-along prototype (a separate project for EPUB books) proved the interaction: sentence spans, click to start, highlight while playing. It also showed the failure that matters most: it starts slowly and stalls when the speed goes up. Each sentence there goes through an LLM cleanup call, a Gemini TTS call and a transcode, one after the other, and only the next 2–3 sentences are prepared, one at a time. At 2× a 4-second sentence plays in 2 seconds but takes 3–5 to produce.
 - So the design is driven by the **worst case**: the p95 time to produce a sentence against how long it plays at 2.5×, not the average latency.
-- TTS models were compared on 21 Oct 2026 (Artificial Analysis leaderboard, vendor docs and price pages). Prices and latencies conflict across sources; see Considered options.
+- TTS models were compared on 21 Oct 2026 (Artificial Analysis leaderboard, vendor docs and price pages). Prices and latencies conflict across sources; see Considered options. Inworld, the chosen engine, was then measured from the owner's machine in Italy (Probe results).
 
 ## Non-goals
 
 - Summarizing, paraphrasing or "performing" the text. The reader says what is written.
 - Editing inside the panel. Edits happen in the normal editor.
 - Offline or local TTS engines (CPU latency of small open models is too high; see Considered options).
-- Several voices, voice cloning or voice design.
+- Several voices in one document, voice cloning or voice design.
+- Word-level highlighting. Inworld can return word timestamps (`timestampType: WORD`); a later spec can use them.
 - Publishing to the Marketplace (spec 0001 D7).
 
 ## Considered options
@@ -50,13 +51,27 @@ Only pay-as-you-go pricing is acceptable; subscription plans (ElevenLabs, Cartes
 | Engine                             | Price /1M chars | Read 0001 | Latency (third-party, not measured here)      | Pause and emphasis control                            | Notes                                                                                                 |
 | ---------------------------------- | --------------- | --------- | --------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Speechify Simba 3.2                | 10              | ~0.23 $   | 123 ms to first audio                         | SSML `<break>`, `<prosody>`, `<emphasis>`, `<sub>`    | Separate account and API key                                                                          |
-| Inworld TTS-2 Flash                | 15              | ~0.34 $   | not measured (TTS-2: 169 ms)                  | SSML `<break>` (20 per request)                       | Separate account and API key                                                                          |
+| **Inworld TTS-2 Flash** (chosen)   | 15 (TTS-2: 25)  | ~0.34 $   | measured: 158–180 ms to first audio           | SSML `<break>` (20 per request)                       | Separate account and API key; 15 tier-1 languages, Italian included                                   |
 | OpenAI gpt-4o-mini-tts             | ~17             | ~0.38 $   | not published                                 | Natural-language `instructions`; no break tags        | Lowest quality of the four on blind votes; a secondary source reports a retirement date of 6 Jan 2027 |
 | Gemini 3.8 Flash-Lite TTS (Vertex) | ~20             | ~0.45 $   | about 1 s to first token (gateway figures)    | `<short pause>`, `<long pause>`, short `style` string | ADC and GCP billing, no new account; preview, `global` only                                           |
 | Gemini 3.8 Flash TTS (Vertex)      | ~30             | ~0.68 $   | not measured                                  | as Flash-Lite                                         | Best quality of the Gemini models                                                                     |
 | Kokoro 82M (local)                 | 0               | 0         | ~3.7 s to first audio on CPU in one benchmark | none                                                  | Rejected: latency                                                                                     |
 
-Cost does not decide: every candidate costs under a dollar per spec, and re-listening is served from the cache. The choice is made by the D3 benchmark on the worst case, then by ear.
+Cost does not decide: every candidate costs under a dollar per spec, and re-listening is served from the cache. Inworld was chosen by the owner after the research above; the probe below confirmed the latency, and D3 measures the worst case.
+
+#### Probe results (21 Oct 2026)
+
+16 streaming requests to `https://api.inworld.ai/tts/v1/voice:stream` from Italy, MP3 at 24 kHz, `applyTextNormalization: OFF`, sentences of 31–179 characters taken from specs. "Real-time factor" is audio duration divided by total request time; playback at 2.5× needs more than 2.5 per unit in flight.
+
+| Model                 | Voice, language | First audio             | Total        | Audio      | Lowest real-time factor |
+| --------------------- | --------------- | ----------------------- | ------------ | ---------- | ----------------------- |
+| `inworld-tts-2-flash` | Elliot, en      | 469 ms cold, 158–166 ms | 329–1,013 ms | 2.9–14.3 s | 6.9 (cold), then 8.9    |
+| `inworld-tts-2-flash` | Beatrice, en    | 159–180 ms              | 290–879 ms   | 2.4–11.6 s | 8.1                     |
+| `inworld-tts-2-flash` | Orietta, it     | 159–162 ms              | 479–524 ms   | 5.3–5.9 s  | 11.1                    |
+| `inworld-tts-2`       | Elliot, en      | 487 ms cold, 198–213 ms | 601–2,283 ms | 3.1–14.0 s | 4.3                     |
+| `inworld-tts-2`       | Orietta, it     | 192–237 ms              | 852–882 ms   | 4.9–5.4 s  | 5.7                     |
+
+The first request pays the TLS handshake (~300 ms), so connections are kept alive. The EU endpoint (`api.eu.inworld.ai`) answered 403 for this account; the default US endpoint is used. 16 requests give no p95: that is D3's job.
 
 ### Text processing
 
@@ -77,7 +92,8 @@ Made by the owner on 21 Oct 2026:
 - Latency is judged on the worst case (p95 and stalls), not the average.
 - Deterministic text rules first, structured so an LLM processor can replace them.
 - Minimal local telemetry from the first deliverable.
-- The engine is chosen from the D3 benchmark results, recorded in this spec by the branch that delivers D3.
+- Engine: Inworld. Default model `inworld-tts-2-flash` (fastest and cheapest; its lack of steering does not matter for verbatim narration); `inworld-tts-2` is selectable. D3 confirms the default on the worst case.
+- Language and voice are chosen in the panel.
 
 ## Behavior and invariants
 
@@ -85,6 +101,7 @@ Made by the owner on 21 Oct 2026:
 
 - A button in the editor title bar for Markdown files, and the command **Spec Reader: Open Reader**, open the panel beside the editor for the active file.
 - The panel renders the file with `markdown-it`. YAML frontmatter is not shown or read.
+- A toolbar at the top of the panel has a **language** selector (Inworld's 15 tier-1 languages, English first) and a **voice** selector listing the voices whose original language matches, with their description as tooltip. The language and voice are remembered per document, falling back to the last ones used; the first defaults are English with Elliot and Italian with Orietta. Changing either stops playback and empties the prepared units, not the cache.
 - Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. Code blocks are units that are skipped, not read (see Open questions).
 - Clicking a unit plays from it. The playing unit is highlighted and kept in view.
 - Keys in the panel: Space play/pause; ← → previous/next unit; `+`/`-` speed in 0.25 steps from 1× to 2.5×; `E` reveals the playing unit's source line in the editor. Double-click on a unit also reveals its line.
@@ -94,26 +111,31 @@ Made by the owner on 21 Oct 2026:
 
 - **Units** carry an id, a kind (sentence, heading, list sentence, table row, code), the source line range and the source text. The id is a hash of kind and text plus an occurrence counter, so editing one sentence leaves the other ids unchanged.
 - A **`TextProcessor`** turns units into **spoken units**: an engine-neutral list of segments (`text`, `pause` with milliseconds, `emphasis`). It never sees engine markup. The deterministic processor:
-    - speaks inline code by rules: `src/utils/retry.ts` as "src slash utils slash retry dot ts", `camelCase` split into words, `B11` as "B 11";
+    - speaks inline code by rules: `src/utils/retry.ts` as "src slash utils slash retry dot ts", `camelCase` split into words, `B11` as "B 11". The symbol words come from a table per language (English and Italian at first; other languages use English);
     - speaks link text only, never URLs;
     - marks bold text as `emphasis`;
     - reads a table's header row once, then each row with a short pause between cells. No words are added.
 - **Verbatim guard:** every processor's output must contain the source words of the unit, in order, apart from the documented code rules. A processor whose output fails the guard for a unit falls back to the deterministic one for that unit, and the failure is logged (metadata only). This is what lets an LLM processor be swapped in safely.
-- Each **engine adapter** renders segments into its own markup (SSML, angle-bracket tags, or plain text with pauses inserted as silence) and returns audio.
+- Each **engine adapter** renders segments into its own markup and returns audio. The Inworld adapter:
+    - streams from `POST /tts/v1/voice:stream` with `modelId`, `voiceId`, `language` and MP3 output, reading the NDJSON lines and treating an in-stream `error` as a failed request;
+    - renders `pause` as `<break time="…ms" />`, at most 20 per request (Inworld ignores the rest); `emphasis` becomes plain text, since Flash has no emphasis control;
+    - sends the preceding units of the same section, up to 2,000 characters, as `synthesisContext.previousRequests`, which Inworld uses for intonation and does not bill or speak. D3 checks that it helps;
+    - keeps the HTTP connection alive between requests.
+- Voices come from Inworld's voice list (`GET /tts/v1/voices`, or its replacement in the Voice API if equivalent), cached for a day.
 - **Pauses between units** are silence inserted by the player, by unit kind (heading longest, table row shortest), divided by the speed. They are the same for every engine.
 
 ### Audio and scheduling
 
-- One synthesis request per unit. Audio is cached on disk in the extension's global storage, keyed by a hash of engine, model, voice, processor id and version, and spoken segments. Re-listening never calls the engine; editing a sentence re-synthesizes only that unit.
+- One synthesis request per unit. Audio is cached on disk in the extension's global storage, keyed by a hash of engine, model, voice, language, processor id and version, and spoken segments. Re-listening never calls the engine; editing a sentence re-synthesizes only that unit.
 - From the playing unit, the next N units (default 6) are prepared with up to C requests in flight (default 3). A click elsewhere cancels in-flight requests outside the new window.
 - Speed is applied by the player with pitch preserved. Changing speed never re-synthesizes.
-- API keys are kept in `SecretStorage` (command **Spec Reader: Set API Key**). If a Vertex engine is chosen, its project comes from a setting only, never from the credential.
+- The Inworld key is kept in `SecretStorage` (command **Spec Reader: Set API Key**). It stays in the extension host: the webview never sees it, and it is never written to settings, logs or telemetry.
 - The text of the file goes to the chosen engine's provider and nowhere else.
 
 ### Telemetry
 
 - Local only: JSON Lines files in the extension's global storage, one per day, deleted after 30 days. Nothing is sent anywhere.
-- Events carry metadata only, never document text: `synth` (engine, model, characters, cache hit, time to first byte, total time, audio duration, error code), `play_start` (click to first sound), `stall` (wait time, speed, units ready), `session_end` (units played, speed, stall count).
+- Events carry metadata only, never document text: `synth` (engine, model, voice, language, characters, cache hit, time to first byte, total time, audio duration, error code), `play_start` (click to first sound), `stall` (wait time, speed, units ready), `session_end` (units played, speed, stall count).
 - **Spec Reader: Show Telemetry Summary** prints p50 and p95 per engine and the stall count per session in an output channel.
 
 ## Deliverables
@@ -121,20 +143,20 @@ Made by the owner on 21 Oct 2026:
 - [ ] D1. Telemetry writer, retention and the event schema above, with a test that a document's text never reaches the files.
 - [ ] D2. Markdown to units, the segment format, the `TextProcessor` interface, the deterministic processor and the verbatim guard, tested on real specs.
 - [ ] D3. `scripts/tts-bench.mjs` and its results: see below.
-- [ ] D4. The chosen engine's adapter and the audio cache.
-- [ ] D5. The panel and player: rendering, click to play, highlight, keys, jump to source, re-render on save, scheduling, inserted pauses, `stall` and `play_start` events.
+- [ ] D4. The Inworld adapter, the voice list, the key command and the audio cache.
+- [ ] D5. The panel and player: rendering, language and voice selectors, click to play, highlight, keys, jump to source, re-render on save, scheduling, inserted pauses, `stall` and `play_start` events.
 - [ ] D6. The telemetry summary command and a local `.vsix` build.
 
-### D3. Engine benchmark
+### D3. Inworld benchmark
 
 - [ ] Delivered
 
-- Run by hand from the owner's machine, with keys from environment variables: Speechify Simba 3.2, Inworld TTS-2 Flash and Gemini 3.8 Flash-Lite TTS; OpenAI gpt-4o-mini-tts if a key is present.
-- Input: the first 40 units of a given Markdown file, through the D2 pipeline, rendered by a minimal adapter per engine.
+- Run by hand from the owner's machine, with the key from the `INWORLD_API_KEY` environment variable. Compares `inworld-tts-2-flash` and `inworld-tts-2`, in English and Italian, with and without `synthesisContext`, and with text normalization on and off.
+- Input: the first 40 units of a given Markdown file, through the D2 pipeline and the D4 adapter's request builder.
 - Measures per request: time to first byte (streaming where the engine offers it), total time, audio duration. Runs once sequentially and once with 3 requests in flight.
 - Simulates playback at 1×, 2× and 2.5× with N=6 and C=3 from the measured times, and counts stalls.
 - Writes measurements as telemetry `synth` events and audio samples to a directory outside the repo, for listening side by side.
-- The branch that delivers D3 adds a `## Benchmark results` section to this spec (p50/p95 per engine, stalls per speed, cost per 1k characters) and records the chosen engine under Decisions.
+- The branch that delivers D3 adds a `## Benchmark results` section to this spec (p50/p95 per variant, stalls per speed, characters billed) and records the default model and the `synthesisContext` and normalization settings under Decisions.
 
 ## Acceptance checks
 
@@ -145,11 +167,11 @@ Made by the owner on 21 Oct 2026:
 - Reading spec 0001 of `vertex-ai-models-chat-provider` from the first unit to the end at 2.5×, cache empty, records zero `stall` events after the first unit. Catches scheduling that keeps up on average but not in the worst case.
 - Click to first sound: p95 at most 1 s with the cache empty, at most 200 ms with the cache warm (telemetry `play_start`). Catches a slow start.
 - Changing speed during playback makes no `synth` request. Catches speed applied by the engine instead of the player.
+- Switching the voice and back plays the earlier units from the cache (`cacheHit: true`). Catches a cache key that ignores the voice.
+- The Inworld key appears in no file under the extension's storage, no log line and no message to the webview (search for it after a session). Catches a leaked credential.
 
 ## Open questions
 
-- Accounts and keys: the owner opens pay-as-you-go accounts for the benchmarked providers (Speechify, Inworld) before D3.
 - Latency targets: are 1 s (cold) and 200 ms (warm) for click to first sound the right bar?
 - Code blocks: skip silently (current proposal), or read them?
-- Language: specs are in English. Should Italian documents be supported (voice per language), or deferred?
 - Should the panel follow the editor's cursor (click in the source to set the start point), or is the button-plus-click flow enough for now?

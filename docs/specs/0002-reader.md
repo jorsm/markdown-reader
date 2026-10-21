@@ -71,7 +71,7 @@ Cost does not decide: every candidate costs under a dollar per spec, and re-list
 | `inworld-tts-2`       | Elliot, en      | 487 ms cold, 198–213 ms | 601–2,283 ms | 3.1–14.0 s | 4.3                     |
 | `inworld-tts-2`       | Orietta, it     | 192–237 ms              | 852–882 ms   | 4.9–5.4 s  | 5.7                     |
 
-The first request pays the TLS handshake (~300 ms), so connections are kept alive. The EU endpoint (`api.eu.inworld.ai`) answered 403 for this account; the default US endpoint is used. 16 requests give no p95: that is D3's job.
+The first request pays the TLS handshake (~300 ms), so connections are kept alive. The default US endpoint is used: Inworld's EU region (`api.eu.inworld.ai`) is a separate deployment sold only through enterprise contracts, with its own workspaces and keys, so a self-serve key is unknown there (403, "API key does not exist"). 16 requests give no p95: that is D3's job.
 
 ### Text processing
 

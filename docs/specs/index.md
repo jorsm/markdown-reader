@@ -4,6 +4,7 @@ Plans, designs and decisions for this repo. Read this list before changing code,
 
 Newest first.
 
-| ID                           | Title        | Status   | Governs                                                                                | Description                                                                            |
-| ---------------------------- | ------------ | -------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [0001](0001-repo-harness.md) | Repo harness | accepted | `AGENTS.md`, `docs/specs/`, `.github/`, `.claude/`, `.husky/`, `package.json`, `test/` | Specs, review workflow, agent instructions, local branch protection and the check gate |
+| ID                           | Title        | Status   | Governs                                                                                | Description                                                                                                              |
+| ---------------------------- | ------------ | -------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [0002](0002-reader.md)       | Reader       | proposed | `src/`, `media/`, `scripts/tts-bench.mjs`, `package.json`                              | Read-along panel for Markdown, text pipeline, TTS engine chosen by worst-case benchmark, audio cache and local telemetry |
+| [0001](0001-repo-harness.md) | Repo harness | accepted | `AGENTS.md`, `docs/specs/`, `.github/`, `.claude/`, `.husky/`, `package.json`, `test/` | Specs, review workflow, agent instructions, local branch protection and the check gate                                   |

@@ -192,6 +192,9 @@ export class ReaderPanel {
                 this.deps.player?.resume();
                 this.onResume?.();
                 break;
+            case "model":
+                await this.chooseModel(String(message.value));
+                break;
             case "speed":
                 // ffplay's tempo is fixed per process: the new speed applies from the next unit.
                 this.speed = Number(message.value) || this.speed;
@@ -214,7 +217,7 @@ export class ReaderPanel {
                 u,
             ]),
         );
-        void this.post({ type: "render", html, units: units.map(({ id, kind, line }) => ({ id, kind, line })), choice: this.choice, languages: LANGUAGES, spend: this.spend(), native: !!this.deps.player });
+        void this.post({ type: "render", html, units: units.map(({ id, kind, line }) => ({ id, kind, line })), choice: this.choice, languages: LANGUAGES, spend: this.spend(), native: !!this.deps.player, model: config().get<string>("model", "inworld-tts-2-flash") });
     }
 
     private async sendVoices(): Promise<void> {
@@ -229,6 +232,15 @@ export class ReaderPanel {
             this.choice = { ...this.choice, voice: forLanguage.find((v) => v.voiceId === DEFAULT_VOICES[this.choice.language])?.voiceId ?? forLanguage[0]!.voiceId };
         }
         await this.post({ type: "voices", choice: this.choice, voices: forLanguage.map(({ voiceId, displayName, description }) => ({ voiceId, displayName, description })) });
+    }
+
+    /** Switches the Inworld model for every panel, like the setting it writes. Audio already made with either model stays cached. */
+    private async chooseModel(model: string): Promise<void> {
+        this.stopNative();
+        this.scheduler.reset();
+        this.files.clear();
+        await config().update("model", model, vscode.ConfigurationTarget.Global);
+        await this.post({ type: "reset" });
     }
 
     private async choose(next: Choice): Promise<void> {
@@ -415,6 +427,7 @@ export class ReaderPanel {
   <span class="speed"><button id="slower" title="Slower (-)">−</button><span id="speed">1.0×</span><button id="faster" title="Faster (+)">+</button></span>
   <select id="language" title="Language"></select>
   <select id="voice" title="Voice"></select>
+  <select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"><option value="inworld-tts-2-flash">Flash</option><option value="inworld-tts-2">TTS-2</option></select>
   <span id="spend" title="Estimated Inworld spend: this session · this month"></span>
   <span id="status"></span>
 </header>

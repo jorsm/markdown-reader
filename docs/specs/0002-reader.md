@@ -73,6 +73,18 @@ Cost does not decide: every candidate costs under a dollar per spec, and re-list
 
 The first request pays the TLS handshake (~300 ms), so connections are kept alive. The default US endpoint is used: Inworld's EU region (`api.eu.inworld.ai`) is a separate deployment sold only through enterprise contracts, with its own workspaces and keys, so a self-serve key is unknown there (403, "API key does not exist"). 16 requests give no p95: that is D3's job.
 
+### Where audio plays
+
+The draft (PR "draft reader") showed two limits of VS Code's webview, both measured in VS Code 1.142 (snap) on Linux:
+
+- It cannot decode Opus: WebAudio fails on a valid Ogg Opus file while MP3, WAV, FLAC and Vorbis decode, although `canPlayType` answers "probably". Hence MP3.
+- In the snap build it has no sound at all: the snap ships only ALSA (`libasound`), so the audio element advances in silence and PipeWire shows no stream.
+
+| Option                                                                | Pros                                                                                                                   | Cons                                                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Audio element in the webview                                          | No dependency; speed with pitch kept (`preservesPitch`)                                                                | Silent in the snap build; codec support varies by build                                                              |
+| **ffplay (FFmpeg) run by the extension host** (chosen when available) | Talks to the system's audio server directly; `atempo` keeps the pitch; same approach as other VS Code audio extensions | Needs FFmpeg installed; a speed change applies from the next unit; pause relies on SIGSTOP/SIGCONT (Linux and macOS) |
+
 ### Text processing
 
 | Option                                                               | Pros                               | Cons                                          |
@@ -118,7 +130,7 @@ Made by the owner on 21 Oct 2026:
     - reads a table's header row once, then each row with a short pause between cells. No words are added.
 - **Verbatim guard:** every processor's output must contain the source words of the unit, in order, apart from the documented code rules. A processor whose output fails the guard for a unit falls back to the deterministic one for that unit, and the failure is logged (metadata only). This is what lets an LLM processor be swapped in safely.
 - Each **engine adapter** renders segments into its own markup and returns audio. The Inworld adapter:
-    - streams from `POST /tts/v1/voice:stream` with `modelId`, `voiceId`, `language` and MP3 output, reading the NDJSON lines and treating an in-stream `error` as a failed request;
+    - streams from `POST /tts/v1/voice:stream` with `modelId`, `voiceId`, `language` and MP3 output, reading the NDJSON lines and treating an in-stream `error` as a failed request. Never Ogg Opus: VS Code's webview can't decode it;
     - renders `pause` as `<break time="…ms" />`, at most 20 per request (Inworld ignores the rest); `emphasis` becomes plain text, since Flash has no emphasis control;
     - sends the preceding units of the same section, at most 5 units and 2,000 characters (Inworld rejects more with a 400), as `synthesisContext.previousRequests`, which Inworld uses for intonation and does not bill or speak. D3 checks that it helps;
     - keeps the HTTP connection alive between requests.
@@ -130,6 +142,7 @@ Made by the owner on 21 Oct 2026:
 - One synthesis request per unit. Audio is cached on disk in the extension's global storage, keyed by a hash of engine, model, voice, language, processor id and version, and spoken segments. Re-listening never calls the engine; editing a sentence re-synthesizes only that unit.
 - From the playing unit, the next N units (default 6) are prepared with up to C requests in flight (default 3). A click elsewhere cancels in-flight requests outside the new window.
 - Speed is applied by the player with pitch preserved. Changing speed never re-synthesizes.
+- **Audio output** (setting `markdownReader.audioOutput`): `auto` (default) plays through ffplay when it runs on the machine and falls back to the webview's audio element; `ffplay` and `webview` force one. With ffplay the extension host sequences the units (play, inserted pause, next) and the panel only highlights and sends commands; a speed change applies from the next unit. A "Markdown Reader" output channel logs which output is in use and, when ffplay is unusable, why.
 - The Inworld key is kept in `SecretStorage` (command **Markdown Reader: Set API Key**). It stays in the extension host: the webview never sees it, and it is never written to settings, logs or telemetry.
 - **The key is validated when it is entered**, before it is stored, with a call that synthesizes nothing and bills nothing (the voice list):
     - accepted (200): stored, and the open panels reload their voice list;
@@ -189,6 +202,8 @@ Made by the owner on 21 Oct 2026:
 - With the network down, entering a key stores it with a warning. Catches a validation that blocks setup offline.
 
 ## Open questions
+
+- Should ffplay be bundled for platforms where FFmpeg is rarely installed (Windows), as some audio extensions do, or is a clear message enough?
 
 - Should a monthly budget (e.g. `markdownReader.monthlyBudgetUsd`) warn or stop synthesis when reached, or is seeing the spend enough?
 - Latency targets: are 1 s (cold) and 200 ms (warm) for click to first sound the right bar?

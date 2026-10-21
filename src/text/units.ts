@@ -3,6 +3,7 @@ import MarkdownIt from "markdown-it";
 
 type Token = ReturnType<MarkdownIt["parse"]>[number];
 
+/** What a unit is in the document; it sets the pause after it. */
 export type UnitKind = "heading" | "sentence" | "row";
 
 /** One clickable, separately synthesized piece of the document. */
@@ -19,6 +20,7 @@ export interface Unit {
     spoken: string;
 }
 
+/** The document as the panel shows it, with every unit wrapped in a clickable element, and its units in order. */
 export interface RenderedDocument {
     html: string;
     units: Unit[];
@@ -47,6 +49,7 @@ const ABBREVIATIONS = new Set([
     "pag",
 ]);
 
+/** Renders Markdown to HTML and splits it into speech units: headings, sentences and table rows. Code blocks are shown, not read. */
 export function renderDocument(source: string, language: string): RenderedDocument {
     const md = new MarkdownIt({ html: false, linkify: false });
     const tokens = md.parse(blankFrontmatter(source), {});

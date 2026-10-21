@@ -19,6 +19,7 @@ export class NativePlayer implements AudioOutput {
         });
     }
 
+    /** Starts ffplay on `file` at `speed` (atempo keeps the pitch); stops whatever was playing. */
     play(file: string, speed: number): Promise<PlayResult> {
         this.stop();
         const child = spawn(
@@ -66,6 +67,7 @@ export class NativePlayer implements AudioOutput {
     /** ffplay's tempo is fixed per process: a new speed applies from the next unit. */
     setSpeed(): void {}
 
+    /** Freezes ffplay with SIGSTOP; the audio stream stays open, so resuming is instant. */
     pause(): void {
         if (this.process && !this.paused) {
             this.process.kill("SIGSTOP");
@@ -73,6 +75,7 @@ export class NativePlayer implements AudioOutput {
         }
     }
 
+    /** Thaws ffplay with SIGCONT. */
     resume(): void {
         if (this.process && this.paused) {
             this.process.kill("SIGCONT");
@@ -80,6 +83,7 @@ export class NativePlayer implements AudioOutput {
         }
     }
 
+    /** Ends ffplay; its `play` promise resolves "stopped". */
     stop(): void {
         const child = this.process;
         if (!child) {

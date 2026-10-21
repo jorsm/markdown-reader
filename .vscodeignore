@@ -1,0 +1,8 @@
+# Only the bundle (out/extension.js), media/, package.json, README, CHANGELOG and LICENSE ship.
+**
+!out/extension.js
+!media/**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE

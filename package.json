@@ -6,6 +6,10 @@
     "version": "0.0.1",
     "private": true,
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jorsm/markdown-reader"
+    },
     "engines": {
         "vscode": "^1.110.0"
     },
@@ -21,7 +25,7 @@
         "watch": "tsc -watch -p ./",
         "clean": "rimraf out",
         "bundle": "npm run clean && esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
-        "test": "npm run compile && node --test test/",
+        "test": "npm run compile && node --test 'test/**/*.test.js'",
         "lint": "eslint src --max-warnings 0",
         "format": "prettier --write .",
         "format:check": "prettier --check .",

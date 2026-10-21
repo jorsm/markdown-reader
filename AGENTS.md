@@ -4,7 +4,7 @@ Instructions for coding agents (Claude Code first; Codex and VS Code Copilot cha
 
 ## What this is
 
-A VS Code extension ("Spec Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. The reader is not built yet: until its spec is accepted and implemented, `src/extension.ts` is an empty activation.
+A VS Code extension ("Markdown Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. The reader is not built yet: until its spec is accepted and implemented, `src/extension.ts` is an empty activation.
 
 ## Before you change anything
 

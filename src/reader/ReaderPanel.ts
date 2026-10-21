@@ -29,7 +29,7 @@ export const LANGUAGES: Record<string, string> = {
 /** The models of the `markdownReader.model` setting, as the toolbar names them. */
 export const MODELS: Record<string, string> = { "inworld-tts-2-flash": "Flash", "inworld-tts-2": "TTS-2" };
 
-const DEFAULT_VOICES: Record<string, string> = { en: "Elliot", it: "Orietta" };
+const DEFAULT_VOICES: Record<string, string> = { en: "Jason", it: "Orietta" };
 /** Silence after each kind of unit at 1×, in milliseconds; divided by the speed. */
 const PAUSE_MS: Record<string, number> = { heading: 650, sentence: 280, row: 200 };
 

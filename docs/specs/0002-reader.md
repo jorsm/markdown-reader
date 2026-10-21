@@ -118,7 +118,8 @@ Made by the owner on 21 Oct 2026:
 - The toolbar also has a **model** selector (Flash or TTS-2) that writes `markdownReader.model`; switching drops the prepared units, and audio made with either model stays cached.
 - Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. Code blocks are units that are skipped, not read (see Open questions).
 - Clicking a unit plays from it. The playing unit is highlighted and kept in view.
-- Keys in the panel: Space play/pause; ← → previous/next unit; `+`/`-` speed in 0.25 steps from 1× to 2.5×; `E` reveals the playing unit's source line in the editor. Double-click on a unit also reveals its line.
+- **Speed** from 0.75× to 3×: a slider in the toolbar (steps of 0.05) for big changes in one gesture, and `+`/`-` for fine ones (steps of 0.1). The speed is remembered across panels. Steps of 0.25 were too coarse to settle on a comfortable pace (owner, 22 Oct 2026).
+- Keys in the panel: Space play/pause; ← → previous/next unit; `+`/`-` speed; `E` reveals the playing unit's source line in the editor. Double-click on a unit also reveals its line.
 - On save, the panel re-renders. Playback continues from the same unit if it still exists, otherwise it pauses at the nearest following unit.
 
 ### Text pipeline

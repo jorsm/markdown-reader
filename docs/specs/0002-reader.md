@@ -114,7 +114,7 @@ Made by the owner on 21 Oct 2026:
 
 - A button in the editor title bar for Markdown files, and the command **Markdown Reader: Open Reader**, open the panel beside the editor for the active file.
 - The panel renders the file with `markdown-it`. YAML frontmatter is not shown or read.
-- A toolbar at the top of the panel has a **language** selector (Inworld's 15 tier-1 languages, English first) and a **voice** selector listing the voices whose original language matches, with their description as tooltip. The language and voice are remembered per document, falling back to the last ones used; the first defaults are English with Elliot and Italian with Orietta. Changing either stops playback and empties the prepared units, not the cache.
+- A toolbar at the top of the panel has a **language** selector (Inworld's 15 tier-1 languages, English first) and a **voice** selector listing the voices whose original language matches, with their description as tooltip. The language and voice are remembered per document, falling back to the last ones used; the first defaults are English with Jason and Italian with Orietta. Changing either stops playback and empties the prepared units, not the cache.
 - The toolbar also has a **model** selector (Flash or TTS-2) that writes `markdownReader.model`; switching drops the prepared units, and audio made with either model stays cached.
 - Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. Code blocks are units that are skipped, not read (see Open questions).
 - Clicking a unit plays from it. The playing unit is highlighted and kept in view.

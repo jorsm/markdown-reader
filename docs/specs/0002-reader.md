@@ -2,7 +2,7 @@
 id: "0002"
 title: Reader
 description: The read-along panel for Markdown files (click a sentence, hear it from there, highlighted), its text pipeline, Inworld TTS with language and voice selection, audio cache and local telemetry.
-status: proposed
+status: accepted
 date: 2026-10-21
 supersedes: none
 code:

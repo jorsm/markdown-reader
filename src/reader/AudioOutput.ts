@@ -1,0 +1,66 @@
+import { readFile } from "node:fs/promises";
+
+export type PlayResult = "ended" | "stopped";
+
+/** Where audio is heard. The reader's sequencer drives one of these and does not care which. */
+export interface AudioOutput {
+    /** Plays a file to its end ("ended"), or until `stop` ("stopped"); rejects if it can't play. */
+    play(file: string, speed: number): Promise<PlayResult>;
+    pause(): void;
+    resume(): void;
+    stop(): void;
+    /** Applies a new speed to the unit playing now, when the output can. */
+    setSpeed(speed: number): void;
+}
+
+/**
+ * Plays through the panel's audio element: the extension sends the bytes, the panel plays them from a
+ * Blob URL and reports back when the unit ends or fails. Used where ffplay is not available.
+ */
+export class WebviewOutput implements AudioOutput {
+    private token = 0;
+    private pending: { token: number; resolve: (result: PlayResult) => void; reject: (error: Error) => void } | undefined;
+
+    constructor(private readonly post: (message: unknown) => Thenable<boolean>) {}
+
+    async play(file: string, speed: number): Promise<PlayResult> {
+        this.stop();
+        const token = ++this.token;
+        const data = new Uint8Array(await readFile(file));
+        const done = new Promise<PlayResult>((resolve, reject) => (this.pending = { token, resolve, reject }));
+        await this.post({ type: "play", token, data, speed });
+        return done;
+    }
+
+    /** Called with the panel's `ended` and `playError` messages. */
+    settle(token: number, error?: string): void {
+        if (this.pending?.token !== token) {
+            return;
+        }
+        const { resolve, reject } = this.pending;
+        this.pending = undefined;
+        if (error === undefined) {
+            resolve("ended");
+        } else {
+            reject(new Error(`playback failed. ${error}`));
+        }
+    }
+
+    pause(): void {
+        void this.post({ type: "pauseAudio" });
+    }
+
+    resume(): void {
+        void this.post({ type: "resumeAudio" });
+    }
+
+    stop(): void {
+        this.pending?.resolve("stopped");
+        this.pending = undefined;
+        void this.post({ type: "stopAudio" });
+    }
+
+    setSpeed(speed: number): void {
+        void this.post({ type: "speed", value: speed });
+    }
+}

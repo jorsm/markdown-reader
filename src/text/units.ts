@@ -13,6 +13,8 @@ export interface Unit {
     line: number;
     /** Heading count before the unit, so context stays within a section. */
     section: number;
+    /** Position in the document's unit list. */
+    index: number;
     /** What the TTS engine is asked to say. */
     spoken: string;
 }
@@ -53,12 +55,12 @@ export function renderDocument(source: string, language: string): RenderedDocume
     let section = 0;
 
     const addUnit = (kind: UnitKind, line: number, sourceText: string, spoken: string): string => {
-        const base = createHash("sha256").update(`${kind}\n${sourceText}`).digest("hex").slice(0, 12);
+        const base = shortHash(`${kind}\n${sourceText}`, 12);
         const n = seen.get(base) ?? 0;
         seen.set(base, n + 1);
         const id = `${base}-${n}`;
         if (spoken.trim()) {
-            units.push({ id, kind, line, section, spoken });
+            units.push({ id, kind, line, section, spoken, index: units.length });
         }
         return id;
     };
@@ -69,8 +71,9 @@ export function renderDocument(source: string, language: string): RenderedDocume
             section++;
             const inline = tokens[i + 1];
             if (inline?.type === "inline") {
-                const id = addUnit("heading", token.map?.[0] ?? 0, inline.content, spokenInline(md, inline.content, language));
-                replaceChildren(inline, `<span class="u" data-u="${id}">${md.renderInline(inline.content)}</span>`);
+                const id = addUnit("heading", token.map?.[0] ?? 0, inline.content, spokenTokens(inline.children ?? [], language));
+                token.attrSet("class", "u");
+                token.attrSet("data-u", id);
                 i++;
             }
             continue;
@@ -91,10 +94,13 @@ export function renderDocument(source: string, language: string): RenderedDocume
             i = j;
             continue;
         }
-        if (token.type === "inline" && !isInsideTable(tokens, i)) {
-            const startLine = token.map?.[0] ?? 0;
+        // Inline tokens of tables were consumed with their row above.
+        if (token.type === "inline") {
+            let line = token.map?.[0] ?? 0;
+            let counted = 0;
             const spans = splitSentences(token.content).map(({ text, offset }) => {
-                const line = startLine + countNewlines(token.content.slice(0, offset));
+                line += countNewlines(token.content.slice(counted, offset));
+                counted = offset;
                 const id = addUnit("sentence", line, text, spokenInline(md, text, language));
                 return `<span class="u" data-u="${id}">${md.renderInline(text)}</span>`;
             });
@@ -113,7 +119,7 @@ const CONTEXT_MAX_CHARS = 2000;
 export function contextFor(units: Unit[], unit: Unit): string[] {
     const result: string[] = [];
     let total = 0;
-    for (let i = units.indexOf(unit) - 1; i >= 0 && result.length < CONTEXT_MAX_UNITS; i--) {
+    for (let i = unit.index - 1; i >= 0 && result.length < CONTEXT_MAX_UNITS; i--) {
         const previous = units[i]!;
         if (previous.section !== unit.section || total + previous.spoken.length > CONTEXT_MAX_CHARS) {
             break;
@@ -137,19 +143,6 @@ function replaceChildren(inline: Token, html: string): void {
     const child = new (inline.constructor as new (type: string, tag: string, nesting: number) => Token)("html_inline", "", 0);
     child.content = html;
     inline.children = [child];
-}
-
-function isInsideTable(tokens: Token[], index: number): boolean {
-    for (let i = index - 1; i >= 0; i--) {
-        const type = tokens[i]!.type;
-        if (type === "table_close") {
-            return false;
-        }
-        if (type === "table_open") {
-            return true;
-        }
-    }
-    return false;
 }
 
 function countNewlines(text: string): number {
@@ -188,7 +181,11 @@ function pushTrimmed(result: { text: string; offset: number }[], text: string, s
 
 /** The words a narrator says for a piece of Markdown inline text: no markup, no URLs, code made speakable. */
 export function spokenInline(md: MarkdownIt, text: string, language: string): string {
-    const children = md.parseInline(text, {})[0]?.children ?? [];
+    return spokenTokens(md.parseInline(text, {})[0]?.children ?? [], language);
+}
+
+/** {@link spokenInline} for text markdown-it has already parsed. */
+function spokenTokens(children: Token[], language: string): string {
     const parts: string[] = [];
     for (const child of children) {
         switch (child.type) {
@@ -208,6 +205,11 @@ export function spokenInline(md: MarkdownIt, text: string, language: string): st
         }
     }
     return parts.join("").replace(/\s+/g, " ").trim();
+}
+
+/** A short hex SHA-256 of `input`: unit ids and audio cache keys. */
+export function shortHash(input: string, length: number): string {
+    return createHash("sha256").update(input).digest("hex").slice(0, length);
 }
 
 /** `src/utils/retry.ts` → "src slash utils slash retry dot ts"; `camelCase` → "camel Case"; `B11` → "B 11". */

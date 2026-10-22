@@ -29,8 +29,15 @@ export class WebviewOutput implements AudioOutput {
         this.stop();
         const token = ++this.token;
         const data = new Uint8Array(await readFile(file));
+        if (token !== this.token) {
+            // Stopped while the file was read.
+            return "stopped";
+        }
         const done = new Promise<PlayResult>((resolve, reject) => (this.pending = { token, resolve, reject }));
-        await this.post({ type: "play", token, data, speed });
+        if (!(await this.post({ type: "play", token, data, speed }))) {
+            // The panel closed: nothing will report the end of this unit.
+            this.stop();
+        }
         return done;
     }
 
@@ -60,6 +67,7 @@ export class WebviewOutput implements AudioOutput {
 
     /** Ends the unit playing now: its `play` promise resolves "stopped". */
     stop(): void {
+        this.token++;
         this.pending?.resolve("stopped");
         this.pending = undefined;
         void this.post({ type: "stopAudio" });

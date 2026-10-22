@@ -1,6 +1,6 @@
 ---
 name: align-agents-md
-description: Keep AGENTS.md true for the code a branch will merge. Checks the AGENTS.md statements a branch could affect (paths, commands, settings and defaults, invariants, cited spec items, test and review rules), fixes the ones it made false with minimal edits, flags changes that break a rule instead, and reports what was checked. Run it as a step of /prepare-pr before any branch goes to review in this repo, and whenever someone asks whether AGENTS.md is stale, outdated or drifted, or after renaming or moving files, adding npm scripts, changing a setting default, or changing what is sent to a provider, stored or logged. Pass "full" to audit the whole file.
+description: Keep AGENTS.md true for the code a branch will merge. Checks the AGENTS.md statements a branch could affect (paths, commands, settings and defaults, invariants, cited spec items, test and review rules), fixes the ones it made false with minimal edits, flags changes that break a rule instead, and reports what was checked. Run it as a step of /prepare-pr before opening or updating any PR in this repo, and whenever someone asks whether AGENTS.md is stale, outdated or drifted, or after renaming or moving files, adding npm scripts, changing a setting default, or changing what is sent to a provider, stored or logged. Pass "full" to audit the whole file.
 ---
 
 # Align AGENTS.md with the code
@@ -19,7 +19,8 @@ The goal is precision, not activity. Most branches need no edit, and "still accu
 The base is the branch the work merges into: `develop`, unless it targets another branch. Compare against the merge base, so commits that reached the base after you branched don't look like yours, and include work not yet committed:
 
 ```sh
-MB=$(git merge-base develop HEAD)            # once published: git fetch, then origin/develop
+git fetch origin develop
+MB=$(git merge-base origin/develop HEAD)
 git diff --name-status "$MB"                  # committed and uncommitted
 git ls-files --others --exclude-standard      # new untracked files
 ```
@@ -66,7 +67,7 @@ Then the other direction: does the branch add something an agent would get wrong
 
 ## 6. Report
 
-End with this block, for the user and for the Docs section of the review:
+End with this block, for the user and for the Docs section of the PR description:
 
 ```
 AGENTS.md: updated (<sections>) | still accurate
@@ -76,4 +77,4 @@ Out of scope: <drift the branch didn't cause, or none>
 Not verified: <statements you couldn't check, and why, or none>
 ```
 
-Tick the `AGENTS.md` box in the Docs section of the filled template (or of the PR, once published) and add the first line.
+If a PR exists and you can edit its description, tick the `AGENTS.md` box in its Docs section and add the first line; otherwise leave that to the user.

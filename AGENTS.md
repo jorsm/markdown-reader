@@ -4,7 +4,7 @@ Instructions for coding agents (Claude Code first; Codex and VS Code Copilot cha
 
 ## What this is
 
-A VS Code extension ("Spec Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. The reader is not built yet: until its spec is accepted and implemented, `src/extension.ts` is an empty activation.
+A VS Code extension ("Markdown Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. Speech comes from Inworld TTS; spec 0002 governs the reader. The current code is a draft that validates the idea; its deliverables are rebuilt one PR at a time.
 
 ## Before you change anything
 
@@ -16,8 +16,13 @@ Don't create new Markdown outside `docs/specs/`, `.claude/skills/`, `AGENTS.md`,
 
 ## Map
 
-- `src/extension.ts` — activation and command registration
-- `test/` — Node test runner suites, named `<name>.test.js` (none yet); they import compiled `out/*.js`
+- `src/extension.ts` — activation, commands, the Inworld key in `SecretStorage`
+- `src/text/units.ts` — Markdown to speech units (sentences, headings, table rows), spoken text rules, synthesis context
+- `src/tts/InworldClient.ts` — Inworld REST calls (synthesis, voices)
+- `src/reader/` — `ReaderPanel` (webview, language and voice choice, playback sequence), `NativePlayer` (ffplay playback from the extension host), `Synthesizer` (audio cache, spend), `Scheduler` (lookahead and concurrency)
+- `src/telemetry/Telemetry.ts` — local JSONL events and the spend ledger
+- `media/` — the panel's player script and styles
+- `test/` — Node test runner suites, named `<name>.test.js`; they import compiled `out/*.js` and use a fake `fetch` for Inworld; `test/readerPanel.test.js` fakes the `vscode` module for code that imports it
 - `scripts/` — manual tools, not run by `npm test`
 - `docs/specs/` — specs and their index
 - `.claude/` — Claude Code Stop hook and project skills (`prepare-pr`, `align-agents-md`)
@@ -33,7 +38,7 @@ Don't create new Markdown outside `docs/specs/`, `.claude/skills/`, `AGENTS.md`,
 | `npm run compile && node --test test/<name>.test.js` | Run one test file |
 | `npm run lint` | ESLint on `src/` (zero warnings allowed) |
 | `npm run format:check` / `npm run format` | Prettier check / fix |
-| `npm run check` | Format check, lint and tests; the pre-push hook and the Claude Code Stop hook run this |
+| `npm run check` | Format check, lint and tests; CI, the pre-push hook and the Claude Code Stop hook run this |
 | `npm run bundle` | Production bundle in `out/extension.js` (esbuild) |
 | `npx @vscode/vsce package --no-dependencies` | Build a `.vsix` locally (`vsce` is fetched on first use; it is not a dependency) |
 
@@ -41,19 +46,20 @@ Run `npm run check` before you say a change is done, and report which commands y
 
 ## Branches and review
 
-- The repo is local only: no remote, no CI (spec 0001 D7 publishes it). `.husky/pre-commit` refuses commits on `develop` and `main`; `.husky/pre-push` refuses pushes to them. Never bypass them with `HUSKY=0` or `--no-verify`.
+- The repo is public on GitHub (jorsm/markdown-reader). `develop` and `main` are protected on GitHub (PR and the CI `build` check required) and locally: `.husky/pre-commit` refuses commits on them, `.husky/pre-push` refuses pushes to them. Never bypass the hooks with `HUSKY=0` or `--no-verify`.
 - Branches: `spec/NNNN-slug` for spec-only work, otherwise `feat/…`, `fix/…`, `chore/…` or `test/…`, always cut from `develop`. Name the spec items a branch implements: `feat/0002-d2-…`.
 - Commits use Conventional Commits (`feat(scope): …`, `fix: …`, `docs(specs): …`); add a body when the reason isn't obvious.
 - Before review, run `/prepare-pr` (other tools: follow `.claude/skills/prepare-pr/SKILL.md`). It holds the order of checks and reviews, and the spec and `CHANGELOG.md` updates every branch makes.
-- Review: the agent's final report carries the filled `.github/pull_request_template.md`; the owner reviews the diff and merges into `develop` with `git merge --no-ff`. Agents never merge.
+- PRs target `develop`, filled from `.github/pull_request_template.md`. `main` only receives release merges from `develop`. The owner reviews and merges; agents never merge.
 - Don't bundle unrelated changes (version bumps, refactors, dependency updates) into a branch about something else.
-- If you change the behavior a spec describes, update the spec on the same branch and say so in the review.
-- Spec status (spec 0001 D1): `proposed`, `accepted` (merging the spec branch is the approval), `implemented`, `rejected`, `deprecated`, `superseded`. Deliverables are checkboxes the implementing branch ticks; `/prepare-pr` has the details.
+- If you change the behavior a spec describes, update the spec on the same branch and say so in the PR description.
+- Spec status (spec 0001 D1): `proposed`, `accepted` (merging the spec PR is the approval), `implemented`, `rejected`, `deprecated`, `superseded`. Deliverables are checkboxes the implementing branch ticks; `/prepare-pr` has the details.
 
 ## Invariants
 
 - Repo text (specs, commits, review texts) will be public once published: no credentials, private identifiers or personal remarks.
-- Logs carry metadata (counts, sizes, durations, statuses, ids), never document text, credentials or tokens.
+- Logs and telemetry carry metadata (counts, sizes, durations, statuses, ids, document paths), never document text, credentials or tokens. `test/synthesizer.test.js` checks it.
+- The Inworld key stays in the extension host and `SecretStorage`: never in settings, files, logs or messages to the webview.
 
 ## Writing tests
 
@@ -65,4 +71,5 @@ Run `npm run check` before you say a change is done, and report which commands y
 ## Writing code
 
 - No `.catch(() => {})` without a comment saying why the failure is safe to ignore. Lint enforces this: put the reason in `// eslint-disable-next-line no-restricted-syntax -- <reason>`, or log the failure instead.
+- Exported functions, classes, public methods, interfaces, types and constants have a TSDoc comment (`/** … */`) that says what they do and why, not how. Lint enforces it: `require-jsdoc` from eslint-plugin-jsdoc, `syntax` from eslint-plugin-tsdoc. Comment private code only where the name and types don't explain it.
 - Match the existing style; Prettier and ESLint are authoritative. `any` is allowed for SDK and HTTP payloads only.

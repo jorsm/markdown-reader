@@ -113,7 +113,7 @@ export class ReaderPanel {
     }
 
     private dispose(): void {
-        // First, so the next show() opens a new panel even if anything below fails.
+        // Before anything that touches the panel: once it is forgotten, the next show() opens a new one.
         this.disposed = true;
         ReaderPanel.panels.delete(this.document.uri.toString());
         for (const d of this.disposables) {

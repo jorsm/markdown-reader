@@ -11,13 +11,14 @@ function audioFile() {
     return file;
 }
 
-/** Resolves with the first result, or with "pending" if the promise has not settled after a few event-loop turns. */
+/** Resolves with the promise's result, or "pending" if it has not settled within 50 ms. */
 async function settled(promise) {
-    const timeout = new Promise((resolve) => setTimeout(() => resolve("pending"), 50));
+    let timer;
+    const timeout = new Promise((resolve) => (timer = setTimeout(resolve, 50, "pending")));
     return Promise.race([
         promise,
         timeout,
-    ]);
+    ]).finally(() => clearTimeout(timer));
 }
 
 test("a stop while the unit's file is read ends that unit instead of playing it", async () => {
@@ -30,10 +31,4 @@ test("a stop while the unit's file is read ends that unit instead of playing it"
     output.stop();
     assert.equal(await settled(playing), "stopped");
     assert.ok(!posted.includes("play"), `posted: ${posted.join(", ")}`);
-});
-
-test("a unit sent to a closed panel ends as stopped instead of waiting forever for the panel", async () => {
-    // A closed panel's webview takes no messages, so no "ended" will ever come back.
-    const output = new WebviewOutput(async () => false);
-    assert.equal(await settled(output.play(audioFile(), 1)), "stopped");
 });

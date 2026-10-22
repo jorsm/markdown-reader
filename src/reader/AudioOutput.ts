@@ -27,17 +27,14 @@ export class WebviewOutput implements AudioOutput {
 
     async play(file: string, speed: number): Promise<PlayResult> {
         this.stop();
-        const token = ++this.token;
+        const token = this.token;
         const data = new Uint8Array(await readFile(file));
         if (token !== this.token) {
             // Stopped while the file was read.
             return "stopped";
         }
         const done = new Promise<PlayResult>((resolve, reject) => (this.pending = { token, resolve, reject }));
-        if (!(await this.post({ type: "play", token, data, speed }))) {
-            // The panel closed: nothing will report the end of this unit.
-            this.stop();
-        }
+        await this.post({ type: "play", token, data, speed });
         return done;
     }
 

@@ -64,6 +64,8 @@ export class ReaderPanel {
     private state: PlaybackState = "stopped";
     private speed: number;
     private onResume: (() => void) | undefined;
+    /** Set when the panel closes: VS Code throws on any use of a closed panel's webview. */
+    private disposed = false;
 
     /** Opens the panel for `document`, or reveals the one already open. */
     static show(context: vscode.ExtensionContext, document: vscode.TextDocument, deps: Deps): void {
@@ -111,12 +113,14 @@ export class ReaderPanel {
     }
 
     private dispose(): void {
-        this.resetPlayback();
-        this.deps.telemetry.flush();
+        // First, so the next show() opens a new panel even if anything below fails.
+        this.disposed = true;
         ReaderPanel.panels.delete(this.document.uri.toString());
         for (const d of this.disposables) {
             d.dispose();
         }
+        this.resetPlayback();
+        this.deps.telemetry.flush();
     }
 
     private async onMessage(message: any): Promise<void> {
@@ -388,7 +392,11 @@ export class ReaderPanel {
         editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
     }
 
+    /** Messages to a closed panel, such as from synthesis or playback that finishes late, are dropped. */
     private post(message: unknown): Thenable<boolean> {
+        if (this.disposed) {
+            return Promise.resolve(false);
+        }
         return this.panel.webview.postMessage(message);
     }
 

@@ -22,7 +22,7 @@ Don't create new Markdown outside `docs/specs/`, `.claude/skills/`, `AGENTS.md`,
 - `src/reader/` — `ReaderPanel` (webview, language and voice choice, playback sequence), `NativePlayer` (ffplay playback from the extension host), `Synthesizer` (audio cache, spend), `Scheduler` (lookahead and concurrency)
 - `src/telemetry/Telemetry.ts` — local JSONL events and the spend ledger
 - `media/` — the panel's player script and styles
-- `test/` — Node test runner suites, named `<name>.test.js`; they import compiled `out/*.js` and use a fake `fetch` for Inworld
+- `test/` — Node test runner suites, named `<name>.test.js`; they import compiled `out/*.js` and use a fake `fetch` for Inworld; `test/readerPanel.test.js` fakes the `vscode` module for code that imports it
 - `scripts/` — manual tools, not run by `npm test`
 - `docs/specs/` — specs and their index
 - `.claude/` — Claude Code Stop hook and project skills (`prepare-pr`, `align-agents-md`)

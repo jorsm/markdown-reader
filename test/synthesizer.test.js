@@ -113,3 +113,84 @@ test("a truncated response leaves no cached audio, so a later attempt can synthe
     assert.equal(readFileSync(file, "utf8"), "ID3 fake audio");
     assert.equal(requests, 2, "the retry must reach the provider instead of finding an empty cache entry");
 });
+
+test("simultaneous requests for identical audio share one synthesis and record one bill", async () => {
+    const { synthesizer, job, calls, telemetry, dir } = setup();
+    const files = await Promise.all([
+        synthesizer.ensure(job),
+        synthesizer.ensure(job),
+    ]);
+    assert.equal(files[0], files[1]);
+    assert.equal(calls.length, 1);
+    assert.equal(telemetry.monthSpend().requests, 1);
+    assert.equal(telemetry.monthSpend().cacheHits, 1);
+    assert.equal(telemetry.monthSpend().charsBilled, job.text.length);
+    assert.ok(!allFiles(dir).some((file) => file.endsWith(".part")));
+});
+
+test("cancelling one waiter leaves the shared synthesis running for the other panel", async () => {
+    const { dir, telemetry, job } = setup();
+    let complete;
+    let providerSignal;
+    const client = {
+        synthesize: (_job, signal) => {
+            providerSignal = signal;
+            return new Promise((resolve) => {
+                complete = resolve;
+            });
+        },
+    };
+    const synthesizer = new Synthesizer(join(dir, "audio"), client, telemetry, () => ({}));
+    const abort = new AbortController();
+    const first = synthesizer.ensure(job, abort.signal);
+    const firstRejected = assert.rejects(first, { name: "AbortError" });
+    const second = synthesizer.ensure(job);
+    while (!complete) await new Promise(setImmediate);
+    abort.abort();
+    await firstRejected;
+    assert.equal(providerSignal.aborted, false);
+    complete({ audio: Buffer.from("audio"), charsBilled: job.text.length, totalMs: 1, audioMs: 1 });
+    assert.equal(readFileSync(await second, "utf8"), "audio");
+    assert.equal(telemetry.monthSpend().requests, 1);
+});
+
+test("cancelling every waiter aborts the provider and allows an immediate retry", async () => {
+    const { dir, telemetry, job } = setup();
+    let providerSignal;
+    let requests = 0;
+    const client = {
+        synthesize: (_job, signal) => {
+            requests++;
+            providerSignal = signal;
+            if (requests > 1) return Promise.resolve({ audio: Buffer.from("retry audio"), charsBilled: job.text.length, totalMs: 1, audioMs: 1 });
+            return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+        },
+    };
+    const synthesizer = new Synthesizer(join(dir, "audio"), client, telemetry, () => ({}));
+    const abort = new AbortController();
+    const first = synthesizer.ensure(job, abort.signal);
+    const second = synthesizer.ensure(job, abort.signal);
+    const rejected = Promise.all([
+        assert.rejects(first, { name: "AbortError" }),
+        assert.rejects(second, { name: "AbortError" }),
+    ]);
+    while (!providerSignal) await new Promise(setImmediate);
+    abort.abort();
+    await rejected;
+    assert.equal(providerSignal.aborted, true);
+    assert.equal(readFileSync(await synthesizer.ensure(job), "utf8"), "retry audio");
+    assert.equal(requests, 2);
+});
+
+test("independent synthesizers cannot collide on a temporary cache file", async () => {
+    const { dir, synthesizer, job, telemetry } = setup();
+    const { fetchImpl } = fakeInworld();
+    const second = new Synthesizer(join(dir, "audio"), new InworldClient(async () => KEY, fetchImpl), telemetry, () => ({}));
+    const files = await Promise.all([
+        synthesizer.ensure(job),
+        second.ensure(job),
+    ]);
+    files.forEach((file) => assert.equal(readFileSync(file, "utf8"), "ID3 fake audio"));
+    assert.ok(!allFiles(dir).some((file) => file.endsWith(".part")));
+    assert.equal(telemetry.monthSpend().requests, 2, "separate hosts may synthesize twice, and both bills must be retained");
+});

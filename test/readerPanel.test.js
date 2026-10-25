@@ -180,3 +180,61 @@ test("accepting a replacement key can reload voices in a panel whose first reque
         panel.dispose();
     }
 });
+
+test("opening or closing an idle panel leaves native playback alone; starting it hands ownership over", { timeout: 5000 }, async () => {
+    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 }));
+    const { document, context, deps } = setup(fetchImpl);
+    let pending;
+    const plays = [];
+    let stops = 0;
+    deps.player = {
+        play: (file) => {
+            plays.push(file);
+            return new Promise((resolve) => {
+                pending = resolve;
+            });
+        },
+        stop: () => {
+            stops++;
+            pending?.("stopped");
+            pending = undefined;
+        },
+        pause() {},
+        resume() {},
+    };
+    const open = async (doc) => {
+        ReaderPanel.show(context, doc, deps);
+        const panel = fake.panels.at(-1);
+        await panel.receive({ type: "ready" });
+        return panel;
+    };
+    const start = async (panel, expectedPlays) => {
+        const id = panel.posted.find((message) => message.type === "render").units[0].id;
+        await panel.receive({ type: "start", id });
+        while (plays.length < expectedPlays) await new Promise(setImmediate);
+    };
+    const state = (panel) => panel.posted.filter((message) => message.type === "state").at(-1).state;
+    const first = await open(document);
+    let second;
+    try {
+        await start(first, 1);
+        assert.equal(stops, 0);
+        const idle = await open(setup(fetchImpl).document);
+        idle.dispose();
+        assert.equal(stops, 0, "initializing or closing an inactive panel must not stop the shared player");
+        assert.equal(state(first), "playing");
+        second = await open(setup(fetchImpl).document);
+        await start(second, 2);
+        assert.equal(stops, 1, "claiming playback stops the previous owner exactly once");
+        assert.equal(state(first), "stopped");
+        assert.equal(state(second), "playing");
+        first.dispose();
+        assert.equal(stops, 1, "the old owner can no longer stop the new owner's audio");
+        second.dispose();
+        assert.equal(stops, 2, "disposing the current owner stops its audio");
+    } finally {
+        first.dispose();
+        second?.dispose();
+    }
+    assert.deepEqual(fake.listenerErrors.map(String), []);
+});

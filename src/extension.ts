@@ -43,8 +43,8 @@ async function createDeps(context: vscode.ExtensionContext, log: vscode.LogOutpu
     let asking: Promise<string | undefined> | undefined;
     const client = new InworldClient(async () => (await context.secrets.get(KEY_SECRET)) ?? (await (asking ??= askForKey(context).finally(() => (asking = undefined)))));
     const synthesizer = new Synthesizer(vscode.Uri.joinPath(storage, "audio").fsPath, client, telemetry, () => vscode.workspace.getConfiguration("markdownReader").get<Record<string, number>>("pricePerMillionCharacters", {}));
-    const output = settings.get<string>("audioOutput", "auto");
-    const found = output === "webview" ? { error: 'markdownReader.audioOutput is "webview"' } : await NativePlayer.find();
+    const output = settings.get<string>("audioOutput", "webview");
+    const found = output === "ffplay" ? await NativePlayer.find() : { error: "webview selected" };
     const player = "player" in found ? found.player : undefined;
     activePlayer = player;
     log.info(player ? "Audio output: local ffplay" : `Audio output: local panel (${"error" in found ? found.error : ""}); PATH=${process.env.PATH ?? ""}`);

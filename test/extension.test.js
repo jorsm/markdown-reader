@@ -27,7 +27,7 @@ const vscode = {
         },
     },
     workspace: {
-        getConfiguration: () => ({ get: (_key, fallback) => fallback }),
+        getConfiguration: () => ({ get: (key, fallback) => current.settings[key] ?? fallback }),
         openTextDocument: async (uri) => {
             current.openedUris.push(uri);
             return current.document;
@@ -47,7 +47,7 @@ const OLD_KEY = Buffer.from("previous:working-secret").toString("base64");
 const NEW_KEY = Buffer.from("candidate:new-secret").toString("base64");
 
 function setup(t, input, answer) {
-    current = { input, key: OLD_KEY, errors: [], warnings: [], requests: [], openedUris: [], commands: new Map() };
+    current = { input, key: OLD_KEY, settings: {}, errors: [], warnings: [], requests: [], openedUris: [], commands: new Map() };
     const state = current;
     t.mock.method(globalThis, "fetch", async (url, init) => {
         state.requests.push({ url, method: init.method, authorization: init.headers.Authorization });
@@ -71,10 +71,67 @@ test("desktop VS Code must run the reader in the local UI host, including for SS
     assert.deepEqual(manifest.extensionKind, ["ui"], "allowing the workspace host would launch ffplay on the SSH server");
 });
 
+for (const platform of [
+    "win32",
+    "linux",
+    "darwin",
+]) {
+    for (const output of [
+        undefined,
+        "webview",
+        "auto",
+    ]) {
+        test(`${platform}/${output ?? "default"} opens webview audio without probing ffplay`, async (t) => {
+            const manifest = require("../package.json");
+            assert.equal(manifest.contributes.configuration.properties["markdownReader.audioOutput"].default, "webview");
+            t.mock.property(process, "platform", platform);
+            t.mock.method(NativePlayer, "find", async () => {
+                assert.fail("webview playback must not probe or require ffplay");
+            });
+            const { state, context } = setup(t);
+            state.settings.audioOutput = output;
+            const uri = { scheme: "file", path: "/work/spec.md" };
+            state.document = { uri, languageId: "markdown" };
+            context.globalStorageUri = { fsPath: mkdtempSync(join(tmpdir(), "markdown-reader-output-")) };
+            let opened = false;
+            t.mock.method(ReaderPanel, "show", (_context, _document, deps) => {
+                opened = true;
+                assert.equal(deps.player, undefined, "the panel must use its own webview audio");
+            });
+
+            await state.commands.get("markdownReader.open")(uri);
+
+            assert.ok(opened, `${platform}/${output ?? "default"} must open the reader`);
+            assert.deepEqual(state.errors, []);
+            assert.deepEqual(state.warnings, []);
+        });
+    }
+}
+
+test("an unavailable explicit ffplay selection reports the problem and opens the webview fallback", async (t) => {
+    const { state, context } = setup(t);
+    state.settings.audioOutput = "ffplay";
+    const uri = { scheme: "file", path: "/work/spec.md" };
+    state.document = { uri, languageId: "markdown" };
+    context.globalStorageUri = { fsPath: mkdtempSync(join(tmpdir(), "markdown-reader-output-")) };
+    t.mock.method(NativePlayer, "find", async () => ({ error: "ffplay is not installed" }));
+    let opened = false;
+    t.mock.method(ReaderPanel, "show", (_context, _document, deps) => {
+        opened = true;
+        assert.equal(deps.player, undefined);
+    });
+
+    await state.commands.get("markdownReader.open")(uri);
+
+    assert.ok(opened);
+    assert.match(state.errors[0], /ffplay can't be used, so audio plays in the panel/);
+});
+
 test("Read Aloud opens the explicitly selected remote URI instead of an unrelated active editor", async (t) => {
     const { state, context } = setup(t, undefined, () => {
         throw new Error("opening a reader must not synthesize");
     });
+    state.settings.audioOutput = "ffplay";
     const uri = {
         scheme: "vscode-remote",
         authority: "ssh-remote+test-host",

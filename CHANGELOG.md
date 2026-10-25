@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Remote SSH workspaces play audio on the client computer: the reader runs as a local UI extension and opens remote documents through VS Code. Selecting a remote Markdown file in the Explorer reads that file even when another editor is active.
 - Reopening the reader after closing its panel works again: it no longer fails with "Webview is disposed". Stopping while a sentence is being loaded no longer plays it anyway.
 - Invalid or rejected replacement Inworld keys keep the previous working key. New keys are checked with the free voice-list request, and accepted keys refresh open panels.
 - Truncated synthesis responses and empty audio are rejected before caching, allowing the sentence to be retried.

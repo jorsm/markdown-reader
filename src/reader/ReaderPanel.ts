@@ -77,6 +77,16 @@ export class ReaderPanel {
         ReaderPanel.panels.set(document.uri.toString(), new ReaderPanel(context, document, deps));
     }
 
+    /** Reloads voice choices after a new API key has been accepted, including panels whose first voice request failed. */
+    static async refreshVoices(): Promise<void> {
+        await Promise.all(
+            [...ReaderPanel.panels.values()].map((panel) => {
+                panel.voices = undefined;
+                return panel.sendVoices();
+            }),
+        );
+    }
+
     private constructor(
         private readonly context: vscode.ExtensionContext,
         private readonly document: vscode.TextDocument,

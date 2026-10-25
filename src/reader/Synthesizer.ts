@@ -7,7 +7,7 @@ import { shortHash } from "../text/units";
 import type { InworldClient, SynthRequest } from "../tts/InworldClient";
 
 /** Bumped when the text rules change what is spoken, so old audio is not reused. */
-export const PROCESSOR_ID = "rules-1";
+export const PROCESSOR_ID = "rules-2";
 
 /** One unit to synthesize, with the document it belongs to. */
 export interface SynthJob extends SynthRequest {

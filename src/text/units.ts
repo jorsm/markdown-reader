@@ -52,19 +52,42 @@ const ABBREVIATIONS = new Set([
 /** Renders Markdown to HTML and splits it into speech units: headings, sentences and table rows. Code blocks are shown, not read. */
 export function renderDocument(source: string, language: string): RenderedDocument {
     const md = new MarkdownIt({ html: false, linkify: false });
-    const tokens = md.parse(blankFrontmatter(source), {});
+    // Capture source lines before code spans normalize newlines and link destinations disappear.
+    md.inline.State = class extends md.inline.State {
+        /** Keeps source locations on parsed inline tokens, including breaks and code. */
+        override push(type: string, tag: string, nesting: -1 | 0 | 1): Token {
+            return this.locate(super.push(type, tag, nesting));
+        }
+
+        /** Keeps source locations on ordinary text when the parser flushes it. */
+        override pushPending(): Token {
+            return this.locate(super.pushPending());
+        }
+
+        private locate(token: Token): Token {
+            const line = countNewlines(this.src.slice(0, this.pos));
+            token.map = [
+                line,
+                line + 1,
+            ];
+            return token;
+        }
+    };
+    const env = {};
+    const tokens = md.parse(blankFrontmatter(source), env);
     const units: Unit[] = [];
     const seen = new Map<string, number>();
     let section = 0;
 
-    const addUnit = (kind: UnitKind, line: number, sourceText: string, spoken: string): string => {
+    const addUnit = (kind: UnitKind, line: number, sourceText: string, spoken: string): string | undefined => {
+        if (!spoken.trim()) {
+            return undefined;
+        }
         const base = shortHash(`${kind}\n${sourceText}`, 12);
         const n = seen.get(base) ?? 0;
         seen.set(base, n + 1);
         const id = `${base}-${n}`;
-        if (spoken.trim()) {
-            units.push({ id, kind, line, section, spoken, index: units.length });
-        }
+        units.push({ id, kind, line, section, spoken, index: units.length });
         return id;
     };
 
@@ -75,43 +98,56 @@ export function renderDocument(source: string, language: string): RenderedDocume
             const inline = tokens[i + 1];
             if (inline?.type === "inline") {
                 const id = addUnit("heading", token.map?.[0] ?? 0, inline.content, spokenTokens(inline.children ?? [], language));
-                token.attrSet("class", "u");
-                token.attrSet("data-u", id);
+                if (id) {
+                    token.attrSet("class", "u");
+                    token.attrSet("data-u", id);
+                }
                 i++;
             }
             continue;
         }
         if (token.type === "tr_open") {
-            const cells: string[] = [];
+            const cells: Token[] = [];
             let j = i + 1;
             for (; j < tokens.length && tokens[j]!.type !== "tr_close"; j++) {
                 const cell = tokens[j]!;
                 if (cell.type === "inline") {
-                    cells.push(cell.content);
+                    cells.push(cell);
                 }
             }
-            const spoken = cells.map((c) => spokenInline(md, c, language)).join(", ");
-            const id = addUnit("row", token.map?.[0] ?? 0, cells.join(" | "), spoken);
-            token.attrSet("class", "u");
-            token.attrSet("data-u", id);
+            const spoken = cells.map((c) => spokenTokens(c.children ?? [], language)).join(", ");
+            const id = addUnit("row", token.map?.[0] ?? 0, cells.map((c) => c.content).join(" | "), spoken);
+            if (id) {
+                token.attrSet("class", "u");
+                token.attrSet("data-u", id);
+            }
             i = j;
             continue;
         }
         // Inline tokens of tables were consumed with their row above.
         if (token.type === "inline") {
-            let line = token.map?.[0] ?? 0;
-            let counted = 0;
-            const spans = splitSentences(token.content).map(({ text, offset }) => {
-                line += countNewlines(token.content.slice(counted, offset));
-                counted = offset;
-                const id = addUnit("sentence", line, text, spokenInline(md, text, language));
-                return `<span class="u" data-u="${id}">${md.renderInline(text)}</span>`;
-            });
-            replaceChildren(token, spans.join(" "));
+            const children = token.children ?? [];
+            const text = children.map(inlineText).join("");
+            // Code is an indivisible token: punctuation inside it must not create sentence boundaries.
+            const masked = children.map((child) => (child.type === "code_inline" ? "x".repeat(child.content.length) : inlineText(child))).join("");
+            const sentences = splitSentences(masked, language);
+            if (sentences.length) {
+                let end = 0;
+                const spans = sentences.map(({ text: sentence, offset }) => {
+                    const before = md.renderer.renderInline(sliceInline(children, end, offset), md.options, env);
+                    end = offset + sentence.length;
+                    const fragment = sliceInline(children, offset, end);
+                    const html = md.renderer.renderInline(fragment, md.options, env);
+                    const line = (token.map?.[0] ?? 0) + (fragment.find((child) => inlineText(child).length > 0)?.map?.[0] ?? 0);
+                    const id = addUnit("sentence", line, html, spokenTokens(fragment, language));
+                    return before + (id ? `<span class="u" data-u="${id}">${html}</span>` : html);
+                });
+                replaceChildren(token, spans.join("") + md.renderer.renderInline(sliceInline(children, end, text.length), md.options, env));
+            }
         }
     }
 
-    return { html: md.renderer.render(tokens, md.options, {}), units };
+    return { html: md.renderer.render(tokens, md.options, env), units };
 }
 
 /** Inworld accepts at most 5 previous requests, 2,000 characters in all, as synthesis context. */
@@ -152,17 +188,14 @@ function countNewlines(text: string): number {
     return text.split("\n").length - 1;
 }
 
-/** Splits Markdown inline text into sentences, never inside code spans or link targets. */
-export function splitSentences(text: string): { text: string; offset: number }[] {
-    // Masking keeps offsets: code spans and link targets can't end a sentence.
-    const masked = text.replace(/`[^`]*`|\]\([^)]*\)/g, (m) => "\u0000".repeat(m.length));
+/** Splits visible text with the runtime's locale-aware sentence rules, retaining offsets and common abbreviations. */
+export function splitSentences(text: string, language = "en"): { text: string; offset: number }[] {
     const result: { text: string; offset: number }[] = [];
     let start = 0;
-    const boundary = /[.!?…]["'”’)\]*_]*\s+(?=["“'‘([*_`]*[\p{Lu}\p{N}`])/gu;
-    for (const match of masked.matchAll(boundary)) {
-        const end = match.index + match[0].length;
-        const before = masked.slice(start, match.index + 1);
-        const lastWord = /([\p{L}.]+)\.$/u.exec(before)?.[1]?.toLowerCase() ?? "";
+    const segments = new Intl.Segmenter(language, { granularity: "sentence" }).segment(text);
+    for (const { index, segment } of segments) {
+        const end = index + segment.length;
+        const lastWord = /([\p{L}.]+)\.[\s"'”’)]*$/u.exec(segment)?.[1]?.toLowerCase() ?? "";
         if (ABBREVIATIONS.has(lastWord) || /^\p{L}$/u.test(lastWord)) {
             continue;
         }
@@ -170,6 +203,67 @@ export function splitSentences(text: string): { text: string; offset: number }[]
         start = end;
     }
     pushTrimmed(result, text, start, text.length);
+    return result;
+}
+
+function inlineText(token: Token): string {
+    if (token.type === "text" || token.type === "code_inline") {
+        return token.content;
+    }
+    if (token.type === "image") {
+        return "\uFFFC";
+    }
+    return token.type === "softbreak" || token.type === "hardbreak" ? "\n" : "";
+}
+
+/** Takes a visible-text range without reparsing Markdown; formatting that crosses a boundary is reopened. */
+function sliceInline(children: Token[], start: number, end: number): Token[] {
+    if (start === end) {
+        return [];
+    }
+    const result: Token[] = [];
+    const opened: Token[] = [];
+    let offset = 0;
+    let started = false;
+    const begin = () => {
+        if (!started) {
+            result.push(...opened);
+            started = true;
+        }
+    };
+    for (const child of children) {
+        if (child.nesting === 1) {
+            if (started) {
+                result.push(child);
+            }
+            opened.push(child);
+        } else if (child.nesting === -1) {
+            opened.pop();
+            if (started) {
+                result.push(child);
+            }
+        } else {
+            const length = inlineText(child).length;
+            const from = Math.max(0, start - offset);
+            const to = Math.min(length, end - offset);
+            if (from < to || (length === 0 && offset >= start && offset < end)) {
+                begin();
+                const copy = Object.assign(Object.create(Object.getPrototypeOf(child)) as Token, child);
+                if (child.type === "text" || child.type === "code_inline") {
+                    copy.content = child.content.slice(from, to);
+                }
+                result.push(copy);
+            }
+            offset += length;
+        }
+        if (started && offset >= end) {
+            break;
+        }
+    }
+    for (const open of opened.reverse()) {
+        const close = new (open.constructor as new (type: string, tag: string, nesting: number) => Token)(open.type.replace(/_open$/, "_close"), open.tag, -1);
+        result.push(close);
+    }
     return result;
 }
 
@@ -182,12 +276,7 @@ function pushTrimmed(result: { text: string; offset: number }[], text: string, s
     }
 }
 
-/** The words a narrator says for a piece of Markdown inline text: no markup, no URLs, code made speakable. */
-export function spokenInline(md: MarkdownIt, text: string, language: string): string {
-    return spokenTokens(md.parseInline(text, {})[0]?.children ?? [], language);
-}
-
-/** {@link spokenInline} for text markdown-it has already parsed. */
+/** The narrator's words from parsed Markdown: no markup or URLs, with inline code made speakable. */
 function spokenTokens(children: Token[], language: string): string {
     const parts: string[] = [];
     for (const child of children) {

@@ -17,6 +17,9 @@
         "Other"
     ],
     "activationEvents": [],
+    "extensionKind": [
+        "ui"
+    ],
     "main": "./out/extension.js",
     "contributes": {
         "commands": [
@@ -77,8 +80,8 @@
                         "webview"
                     ],
                     "enumDescriptions": [
-                        "The panel on Windows; ffplay when available on Linux and macOS, otherwise the panel.",
-                        "ffplay (FFmpeg) on Linux and macOS; uses the panel on Windows, where native pause is unavailable.",
+                        "The local panel on Windows; local ffplay when available on Linux and macOS, otherwise the panel.",
+                        "Local ffplay (FFmpeg) on Linux and macOS; uses the panel on Windows, where native pause is unavailable.",
                         "Always the panel's own audio element."
                     ],
                     "default": "auto",

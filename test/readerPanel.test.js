@@ -14,6 +14,7 @@ function fakeVscode() {
     const panels = [];
     const listenerErrors = [];
     const errorsShown = [];
+    const editorsShown = [];
     const fire = (listeners, ...args) => {
         for (const listener of listeners) {
             try {
@@ -74,10 +75,39 @@ function fakeVscode() {
     const vscode = {
         ViewColumn: { One: 1, Beside: -2 },
         ConfigurationTarget: { Global: 1 },
+        TextEditorRevealType: { InCenter: 0 },
+        Position: class {
+            constructor(line, character) {
+                this.line = line;
+                this.character = character;
+            }
+        },
+        Selection: class {
+            constructor(anchor, active) {
+                this.anchor = anchor;
+                this.active = active;
+            }
+        },
+        Range: class {
+            constructor(start, end) {
+                this.start = start;
+                this.end = end;
+            }
+        },
         ThemeIcon: class {},
         Uri: { joinPath: (base, ...parts) => ({ fsPath: join(base.fsPath, ...parts) }) },
         window: {
             createWebviewPanel,
+            showTextDocument: async (document) => {
+                const editor = {
+                    document,
+                    revealRange: (range) => {
+                        editor.revealedRange = range;
+                    },
+                };
+                editorsShown.push(editor);
+                return editor;
+            },
             showErrorMessage: async (message) => {
                 errorsShown.push(message);
                 return undefined;
@@ -90,7 +120,7 @@ function fakeVscode() {
         },
         commands: { executeCommand: async () => {} },
     };
-    return { vscode, panels, listenerErrors, errorsShown };
+    return { vscode, panels, listenerErrors, errorsShown, editorsShown };
 }
 
 const fake = fakeVscode();
@@ -237,4 +267,33 @@ test("opening or closing an idle panel leaves native playback alone; starting it
         second?.dispose();
     }
     assert.deepEqual(fake.listenerErrors.map(String), []);
+});
+
+test("a remote document renders its current text and source navigation returns to that document", async () => {
+    const { document, context, deps } = setup(voices);
+    document.uri = {
+        scheme: "vscode-remote",
+        path: "/work/remote-spec.md",
+        toString: () => "vscode-remote://ssh-remote+test-host/work/remote-spec.md",
+        get fsPath() {
+            throw new Error("a remote document must be accessed through VS Code, not local files");
+        },
+    };
+    document.getText = () => "# Remote draft\n\nUnsaved changes are visible here.";
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        const rendered = panel.posted.find((message) => message.type === "render");
+        assert.ok(rendered.html.includes("Unsaved changes are visible here."));
+        const line = rendered.units.find((unit) => unit.line === 2).line;
+        await panel.receive({ type: "reveal", line });
+        const editor = fake.editorsShown.at(-1);
+        assert.equal(editor.document, document, "revealing the source must retain the original remote document identity");
+        assert.equal(editor.selection.anchor.line, 2);
+        assert.equal(editor.selection.active.line, 2);
+        assert.equal(editor.revealedRange.start.line, 2);
+    } finally {
+        panel.dispose();
+    }
 });

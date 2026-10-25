@@ -47,9 +47,9 @@ async function createDeps(context: vscode.ExtensionContext, log: vscode.LogOutpu
     const found = output === "webview" ? { error: 'markdownReader.audioOutput is "webview"' } : await NativePlayer.find();
     const player = "player" in found ? found.player : undefined;
     activePlayer = player;
-    log.info(player ? "Audio output: ffplay" : `Audio output: panel (${"error" in found ? found.error : ""}); PATH=${process.env.PATH ?? ""}`);
+    log.info(player ? "Audio output: local ffplay" : `Audio output: local panel (${"error" in found ? found.error : ""}); PATH=${process.env.PATH ?? ""}`);
     if (output === "ffplay" && !player) {
-        void vscode.window.showErrorMessage('Markdown Reader: ffplay can\'t be used, so audio plays in the panel. See the "Markdown Reader" output for why; install FFmpeg, or set markdownReader.audioOutput to "webview".');
+        void vscode.window.showErrorMessage('Markdown Reader: local ffplay can\'t be used, so audio plays in the panel. See the "Markdown Reader" output for why; install FFmpeg on your computer, or set markdownReader.audioOutput to "webview".');
     }
     return { client, player, synthesizer, telemetry };
 }
@@ -117,7 +117,7 @@ function isBasicCredential(value: string): boolean {
 
 /** The document to read: the clicked file, the active Markdown editor, or the one behind the active Markdown preview. */
 async function markdownDocument(uri?: vscode.Uri): Promise<vscode.TextDocument | undefined> {
-    if (uri?.scheme === "file") {
+    if (uri) {
         return vscode.workspace.openTextDocument(uri);
     }
     const active = vscode.window.activeTextEditor?.document;

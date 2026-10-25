@@ -144,7 +144,7 @@ export class Synthesizer {
             this.telemetry.record({ ...base, charsBilled: result.charsBilled, costUsd: costUsd(result.charsBilled, job.modelId, this.prices()), totalMs: result.totalMs, audioMs: result.audioMs });
             return file;
         } catch (error) {
-            this.telemetry.record({ ...base, error: error instanceof Error && error.name === "AbortError" ? "aborted" : errorMessage(error).slice(0, 120) });
+            this.telemetry.record({ ...base, error: error instanceof Error && error.name === "AbortError" ? "aborted" : errorMessage(error).slice(0, 50) });
             throw error;
         }
     }

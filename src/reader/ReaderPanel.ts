@@ -132,7 +132,6 @@ export class ReaderPanel {
             d.dispose();
         }
         this.resetPlayback();
-        this.deps.telemetry.flush();
     }
 
     private async onMessage(message: any): Promise<void> {

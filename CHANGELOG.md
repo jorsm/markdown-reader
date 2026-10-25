@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - The extension's identity and display name now match Markdown Reader (`jorsm.markdown-reader`).
+- The reader toolbar groups playback and voice controls, labels selectors and gives play/pause a clear icon. Compact dropdowns have consistent chevrons and thin borders; play/pause uses the theme's filled primary button style, and `+`/`−` use secondary buttons. It follows the VS Code theme, shows keyboard focus and wraps in narrow editor columns; status and estimated spend use a secondary row.
+- The current speed readout, immediately to the right of `+`, opens presets for 1×, 1.25×, 1.5× and 2×. Slider and button adjustments still show intermediate speeds without adding extra menu choices or controls.
 
 ### Fixed
 

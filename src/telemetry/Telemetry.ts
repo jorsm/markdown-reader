@@ -1,4 +1,5 @@
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /** Events carry metadata only: never document text, credentials or tokens. */
@@ -32,35 +33,41 @@ export interface SpendTotals {
 
 type Ledger = Record<string, Record<string, SpendTotals>>;
 
+interface UsageFile {
+    size: number;
+    totals: SpendTotals;
+}
+
 const RETENTION_DAYS = 30;
 
 /** Local-only JSON Lines telemetry (one file per day, kept 30 days) and a spend ledger that is never pruned. */
 export class Telemetry {
     private readonly eventsDir: string;
-    private readonly ledgerFile: string;
-    private ledger: Ledger;
-    private session: SpendTotals = emptyTotals();
-    private unsaved = false;
-    /** Running total of the current month, so showing spend never walks the ledger. */
-    private month: { key: string; totals: SpendTotals } | undefined;
+    private readonly usageDir: string;
+    private readonly writer = randomUUID();
+    private readonly legacy: Ledger;
+    private readonly files = new Map<string, UsageFile>();
+    private readonly session: SpendTotals = emptyTotals();
 
     constructor(
         storageDir: string,
         private readonly now: () => Date = () => new Date(),
     ) {
         this.eventsDir = join(storageDir, "telemetry");
-        this.ledgerFile = join(storageDir, "spend.json");
+        this.usageDir = join(storageDir, "spend");
         mkdirSync(this.eventsDir, { recursive: true });
-        this.ledger = this.loadLedger();
+        mkdirSync(this.usageDir, { recursive: true });
+        this.legacy = this.loadLegacy(join(storageDir, "spend.json"));
         this.prune();
     }
 
     /** Appends the event to today's file and, for synthesis, adds it to the spend ledger. */
     record(event: TelemetryEvent): void {
-        const line = JSON.stringify({ at: this.now().toISOString(), ...event });
-        appendFileSync(join(this.eventsDir, `${day(this.now())}.jsonl`), `${line}\n`);
+        const now = this.now();
+        const line = JSON.stringify({ at: now.toISOString(), ...event });
+        appendFileSync(join(this.eventsDir, `${day(now)}.jsonl`), `${line}\n`);
         if (event.type === "synth" && !event.error) {
-            this.addSpend(event.model, event);
+            this.addSpend(day(now), event.model, event);
         }
     }
 
@@ -71,60 +78,64 @@ export class Telemetry {
 
     /** Spend of the current calendar month (UTC). */
     monthSpend(): SpendTotals {
-        return { ...this.currentMonth() };
-    }
-
-    /** Writes the ledger if cache hits changed it since the last billed request. */
-    flush(): void {
-        if (this.unsaved) {
-            this.save();
-        }
-    }
-
-    /** The running total of the current month, rebuilt from the ledger only when the month changes. */
-    private currentMonth(): SpendTotals {
         const key = day(this.now()).slice(0, 7);
-        if (this.month?.key !== key) {
-            const totals = emptyTotals();
-            for (const [
-                date,
-                models,
-            ] of Object.entries(this.ledger)) {
-                if (date.startsWith(key)) {
-                    Object.values(models).forEach((m) => addTotals(totals, m));
-                }
+        const totals = emptyTotals();
+        for (const [
+            date,
+            models,
+        ] of Object.entries(this.legacy)) {
+            if (date.startsWith(key)) {
+                Object.values(models).forEach((model) => addTotals(totals, model));
             }
-            this.month = { key, totals };
         }
-        return this.month.totals;
+        for (const file of readdirSync(this.usageDir)) {
+            if (file.startsWith(`${key}-`) && file.endsWith(".jsonl")) {
+                addTotals(totals, this.readUsage(file));
+            }
+        }
+        return totals;
     }
 
-    private addSpend(model: string, event: { charsBilled: number; costUsd: number; cacheHit: boolean }): void {
+    private addSpend(date: string, model: string, event: { charsBilled: number; costUsd: number; cacheHit: boolean }): void {
         const delta: SpendTotals = { charsBilled: event.charsBilled, costUsd: event.costUsd, requests: event.cacheHit ? 0 : 1, cacheHits: event.cacheHit ? 1 : 0 };
-        // Built before the ledger changes, so the delta is counted once.
-        const month = this.currentMonth();
-        const today = (this.ledger[day(this.now())] ??= {});
-        addTotals((today[model] ??= emptyTotals()), delta);
+        const file = `${date}.${this.writer}.jsonl`;
+        const line = `${JSON.stringify({ model, ...delta })}\n`;
+        appendFileSync(join(this.usageDir, file), line);
         addTotals(this.session, delta);
-        addTotals(month, delta);
-        // A cache hit only bumps a counter: it is saved with the next billed request, or by flush().
-        if (event.cacheHit) {
-            this.unsaved = true;
-        } else {
-            this.save();
+        // This writer is the only process appending to its file, so its cached totals can be updated directly.
+        const cached = this.files.get(file) ?? { size: 0, totals: emptyTotals() };
+        cached.size += Buffer.byteLength(line);
+        addTotals(cached.totals, delta);
+        this.files.set(file, cached);
+    }
+
+    private readUsage(file: string): SpendTotals {
+        const path = join(this.usageDir, file);
+        const size = statSync(path).size;
+        const cached = this.files.get(file);
+        if (cached?.size === size) {
+            return cached.totals;
         }
+        const totals = emptyTotals();
+        for (const line of readFileSync(path, "utf8").split("\n")) {
+            try {
+                const entry: unknown = JSON.parse(line);
+                if (isSpendEntry(entry)) {
+                    addTotals(totals, entry);
+                }
+            } catch {
+                // An interrupted append may leave a partial final line; completed records remain usable.
+            }
+        }
+        this.files.set(file, { size, totals });
+        return totals;
     }
 
-    private save(): void {
-        writeFileSync(this.ledgerFile, JSON.stringify(this.ledger, null, 1));
-        this.unsaved = false;
-    }
-
-    private loadLedger(): Ledger {
+    private loadLegacy(file: string): Ledger {
         try {
-            return JSON.parse(readFileSync(this.ledgerFile, "utf8")) as Ledger;
+            return JSON.parse(readFileSync(file, "utf8")) as Ledger;
         } catch {
-            // No ledger yet (first run) or unreadable: start a new one rather than block reading.
+            // Old totals are read-only; a missing or unreadable legacy file never overwrites existing history.
             return {};
         }
     }
@@ -133,10 +144,26 @@ export class Telemetry {
         const cutoff = day(new Date(this.now().getTime() - RETENTION_DAYS * 86_400_000));
         for (const file of readdirSync(this.eventsDir)) {
             if (file.endsWith(".jsonl") && file.slice(0, 10) < cutoff) {
-                rmSync(join(this.eventsDir, file));
+                rmSync(join(this.eventsDir, file), { force: true });
             }
         }
     }
+}
+
+function isSpendEntry(value: unknown): value is SpendTotals {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+    const entry = value as Record<string, unknown>;
+    return (
+        typeof entry.model === "string" &&
+        [
+            "charsBilled",
+            "costUsd",
+            "requests",
+            "cacheHits",
+        ].every((key) => typeof entry[key] === "number" && Number.isFinite(entry[key]) && entry[key] >= 0)
+    );
 }
 
 /** Estimated cost in USD of `charsBilled` characters on `model`, at the configured price per million. */

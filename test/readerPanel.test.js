@@ -160,3 +160,23 @@ test("an Inworld reply that arrives after the panel closes is dropped instead of
     assert.deepEqual(fake.listenerErrors.map(String), []);
     assert.deepEqual(fake.errorsShown, []);
 });
+
+test("accepting a replacement key can reload voices in a panel whose first request was rejected", async () => {
+    let accepted = false;
+    const { document, context, deps } = setup(() => (accepted ? voices() : new Response("Unauthorized", { status: 401 })));
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        assert.ok(!panel.posted.some((message) => message.type === "voices"));
+        accepted = true;
+        await ReaderPanel.refreshVoices();
+        const available = panel.posted.find((message) => message.type === "voices");
+        assert.deepEqual(
+            available.voices.map((voice) => voice.voiceId),
+            ["Jason"],
+        );
+    } finally {
+        panel.dispose();
+    }
+});

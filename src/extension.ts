@@ -3,7 +3,7 @@ import { NativePlayer } from "./reader/NativePlayer";
 import { ReaderPanel, type Deps } from "./reader/ReaderPanel";
 import { Synthesizer } from "./reader/Synthesizer";
 import { Telemetry } from "./telemetry/Telemetry";
-import { InworldClient } from "./tts/InworldClient";
+import { InworldClient, InworldError } from "./tts/InworldClient";
 
 const KEY_SECRET = "markdownReader.inworldApiKey";
 
@@ -75,11 +75,44 @@ async function askForKey(context: vscode.ExtensionContext): Promise<string | und
         password: true,
         ignoreFocusOut: true,
     });
-    if (key?.trim()) {
-        await context.secrets.store(KEY_SECRET, key.trim());
-        return key.trim();
+    const candidate = key?.trim();
+    if (!candidate) {
+        return undefined;
     }
-    return undefined;
+    const previous = await context.secrets.get(KEY_SECRET);
+    const unchanged = previous ? "Your previous API key is still being used." : "No API key was saved.";
+    if (!isBasicCredential(candidate)) {
+        void vscode.window.showErrorMessage(`Enter the Base64 key:secret credential from Inworld's API Keys page. ${unchanged}`);
+        return undefined;
+    }
+    try {
+        await new InworldClient(async () => candidate).listVoices();
+    } catch (error) {
+        if (error instanceof InworldError && (error.status === 401 || error.status === 403)) {
+            void vscode.window.showErrorMessage(`Inworld rejected the new API key (${error.status}). ${unchanged}`);
+            return undefined;
+        }
+        await context.secrets.store(KEY_SECRET, candidate);
+        void vscode.window.showWarningMessage("The Inworld API key was saved, but it could not be verified. It will be checked when you next use the reader.");
+        return candidate;
+    }
+    await context.secrets.store(KEY_SECRET, candidate);
+    await ReaderPanel.refreshVoices();
+    return candidate;
+}
+
+function isBasicCredential(value: string): boolean {
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+        return false;
+    }
+    const decoded = Buffer.from(value, "base64");
+    const canonical = decoded.toString("base64");
+    if (value !== canonical && value !== canonical.replace(/=+$/, "")) {
+        return false;
+    }
+    const credential = decoded.toString("utf8");
+    const colon = credential.indexOf(":");
+    return colon > 0 && colon < credential.length - 1;
 }
 
 /** The document to read: the clicked file, the active Markdown editor, or the one behind the active Markdown preview. */

@@ -1,10 +1,16 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
+const { mkdtempSync } = require("node:fs");
+const { join } = require("node:path");
+const { tmpdir } = require("node:os");
 
 let current;
 const vscode = {
+    Uri: { joinPath: (base, ...parts) => ({ fsPath: join(base.fsPath, ...parts) }) },
     window: {
+        activeTextEditor: undefined,
+        visibleTextEditors: [],
         createOutputChannel: () => ({ info() {}, dispose() {} }),
         showInputBox: async () => current.input,
         showErrorMessage: async (message) => {
@@ -20,6 +26,13 @@ const vscode = {
             return { dispose() {} };
         },
     },
+    workspace: {
+        getConfiguration: () => ({ get: (_key, fallback) => fallback }),
+        openTextDocument: async (uri) => {
+            current.openedUris.push(uri);
+            return current.document;
+        },
+    },
 };
 const resolveFilename = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
@@ -27,18 +40,20 @@ Module._resolveFilename = function (request, ...rest) {
 };
 require.cache.vscode = { id: "vscode", filename: "vscode", loaded: true, exports: vscode };
 const { activate } = require("../out/extension.js");
+const { ReaderPanel } = require("../out/reader/ReaderPanel.js");
+const { NativePlayer } = require("../out/reader/NativePlayer.js");
 
 const OLD_KEY = Buffer.from("previous:working-secret").toString("base64");
 const NEW_KEY = Buffer.from("candidate:new-secret").toString("base64");
 
 function setup(t, input, answer) {
-    current = { input, key: OLD_KEY, errors: [], warnings: [], requests: [], commands: new Map() };
+    current = { input, key: OLD_KEY, errors: [], warnings: [], requests: [], openedUris: [], commands: new Map() };
     const state = current;
     t.mock.method(globalThis, "fetch", async (url, init) => {
         state.requests.push({ url, method: init.method, authorization: init.headers.Authorization });
         return answer();
     });
-    activate({
+    const context = {
         subscriptions: [],
         secrets: {
             get: async () => state.key,
@@ -46,9 +61,67 @@ function setup(t, input, answer) {
                 state.key = key;
             },
         },
-    });
-    return { state, enter: () => state.commands.get("markdownReader.setApiKey")() };
+    };
+    activate(context);
+    return { state, context, enter: () => state.commands.get("markdownReader.setApiKey")() };
 }
+
+test("desktop VS Code must run the reader in the local UI host, including for SSH workspaces", () => {
+    const manifest = require("../package.json");
+    assert.deepEqual(manifest.extensionKind, ["ui"], "allowing the workspace host would launch ffplay on the SSH server");
+});
+
+test("Read Aloud opens the explicitly selected remote URI instead of an unrelated active editor", async (t) => {
+    const { state, context } = setup(t, undefined, () => {
+        throw new Error("opening a reader must not synthesize");
+    });
+    const uri = {
+        scheme: "vscode-remote",
+        authority: "ssh-remote+test-host",
+        path: "/work/spec.md",
+        get fsPath() {
+            throw new Error("a remote document path must never be read as a local file");
+        },
+    };
+    state.document = { uri, languageId: "markdown", getText: () => "Unsaved remote document contents." };
+    context.globalStorageUri = { fsPath: mkdtempSync(join(tmpdir(), "markdown-reader-local-")) };
+    t.mock.property(vscode.window, "activeTextEditor", { document: { languageId: "markdown", getText: () => "An unrelated document." } });
+    const player = { play: async () => "ended", pause() {}, resume() {}, stop() {} };
+    t.mock.method(NativePlayer, "find", async () => ({ player }));
+    let opened;
+    t.mock.method(ReaderPanel, "show", (_context, document, deps) => {
+        opened = { document, player: deps.player };
+    });
+
+    await state.commands.get("markdownReader.open")(uri);
+
+    assert.deepEqual(state.openedUris, [uri]);
+    assert.equal(opened.document, state.document);
+    assert.equal(opened.document.getText(), "Unsaved remote document contents.");
+    assert.equal(opened.player, player);
+    assert.deepEqual(state.requests, []);
+    assert.deepEqual(state.warnings, []);
+});
+
+test("Read Aloud keeps the active remote document when invoked without a URI", async (t) => {
+    const { state, context } = setup(t, undefined, () => {
+        throw new Error("opening a reader must not synthesize");
+    });
+    const document = { uri: { scheme: "vscode-remote", path: "/work/active.md" }, languageId: "markdown", getText: () => "Current unsaved text." };
+    context.globalStorageUri = { fsPath: mkdtempSync(join(tmpdir(), "markdown-reader-local-")) };
+    t.mock.property(vscode.window, "activeTextEditor", { document });
+    t.mock.method(NativePlayer, "find", async () => ({ error: "No local ffplay in this test" }));
+    let shown;
+    t.mock.method(ReaderPanel, "show", (_context, selected) => {
+        shown = selected;
+    });
+
+    await state.commands.get("markdownReader.open")();
+
+    assert.equal(shown, document);
+    assert.deepEqual(state.openedUris, [], "the active document must not be reopened through a local path");
+    assert.deepEqual(state.requests, []);
+});
 
 test("a malformed replacement key preserves the working key without contacting Inworld", async (t) => {
     const { state, enter } = setup(t, "not a Basic credential", () => {

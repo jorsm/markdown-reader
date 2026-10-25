@@ -194,3 +194,23 @@ test("independent synthesizers cannot collide on a temporary cache file", async 
     assert.ok(!allFiles(dir).some((file) => file.endsWith(".part")));
     assert.equal(telemetry.monthSpend().requests, 2, "separate hosts may synthesize twice, and both bills must be retained");
 });
+
+test("synthesis error messages are limited to the first 50 characters", async () => {
+    const { dir, telemetry, job } = setup();
+    const message = "x".repeat(90);
+    const synthesizer = new Synthesizer(
+        join(dir, "audio"),
+        {
+            synthesize: async () => {
+                throw new Error(message);
+            },
+        },
+        telemetry,
+        () => ({}),
+    );
+    await assert.rejects(synthesizer.ensure(job), { message });
+    const file = allFiles(join(dir, "telemetry"))[0];
+    const event = JSON.parse(readFileSync(file, "utf8").trim());
+    assert.equal(event.error, message.slice(0, 50));
+    assert.equal(telemetry.monthSpend().requests, 0);
+});

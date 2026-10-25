@@ -428,14 +428,33 @@ export class ReaderPanel {
 <link rel="stylesheet" href="${media("reader.css")}">
 </head>
 <body>
-<header class="toolbar">
-  <button id="play" title="Play / pause (Space)">▶</button>
-  <span class="speed"><button id="slower" title="Slower (-)">−</button><input type="range" id="speedSlider" min="${SPEED.min}" max="${SPEED.max}" step="${SPEED.step}" title="Speed"><span id="speed"></span><button id="faster" title="Faster (+)">+</button></span>
-  <select id="language" title="Language"></select>
-  <select id="voice" title="Voice"></select>
-  <select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"></select>
-  <span id="spend" title="Estimated Inworld spend: this session · this month"></span>
-  <span id="status"></span>
+<header id="toolbar" class="toolbar" aria-label="Reader controls">
+  <div class="toolbar-controls">
+    <div class="playback-controls">
+      <button id="play" class="play-button" type="button" title="Play (Space)" aria-label="Play" data-state="stopped">
+        <svg class="play-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 2.5v11L13 8z"/></svg>
+        <svg class="pause-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 2h4v12H3zm6 0h4v12H9z"/></svg>
+      </button>
+      <div class="speed-control">
+        <label class="control-label" for="speedSlider">Speed</label>
+        <div class="speed">
+          <button id="slower" type="button" title="Slower (-)" aria-label="Decrease speed">−</button>
+          <input type="range" id="speedSlider" min="${SPEED.min}" max="${SPEED.max}" step="${SPEED.step}" title="Playback speed">
+          <span id="speed" aria-hidden="true"></span>
+          <button id="faster" type="button" title="Faster (+)" aria-label="Increase speed">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="voice-controls">
+      <div class="picker"><label class="control-label" for="language">Language</label><select id="language" title="Language"></select></div>
+      <div class="picker voice-picker"><label class="control-label" for="voice">Voice</label><select id="voice" title="Voice"></select></div>
+      <div class="picker model-picker"><label class="control-label" for="model">Model</label><select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"></select></div>
+    </div>
+  </div>
+  <div class="toolbar-meta">
+    <span id="status" role="status"></span>
+    <span id="spend" title="Estimated Inworld spend: current session and calendar month"></span>
+  </div>
 </header>
 <main id="doc"></main>
 <script nonce="${nonce}" src="${media("reader.js")}"></script>

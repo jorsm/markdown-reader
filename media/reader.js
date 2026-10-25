@@ -9,7 +9,8 @@
     const doc = document.getElementById("doc");
     const toolbar = document.getElementById("toolbar");
     const playButton = document.getElementById("play");
-    const speedLabel = document.getElementById("speed");
+    const speedSelect = document.getElementById("speed");
+    const customSpeed = document.getElementById("customSpeed");
     const speedSlider = document.getElementById("speedSlider");
     const languageSelect = document.getElementById("language");
     const voiceSelect = document.getElementById("voice");
@@ -49,7 +50,9 @@
     }
 
     function showSpeed() {
-        speedLabel.textContent = `${speed.toFixed(2)}×`;
+        customSpeed.textContent = `${speed.toFixed(2)}×`;
+        const value = String(speed);
+        speedSelect.value = Array.from(speedSelect.options).some((option) => option.value === value) ? value : "custom";
         speedSlider.setAttribute("aria-valuetext", `${speed.toFixed(2)} times normal speed`);
     }
 
@@ -62,9 +65,9 @@
         const next = Number(speedSlider.value);
         if (next !== speed) {
             speed = next;
-            showSpeed();
             setRate();
         }
+        showSpeed();
         if (remember) {
             post({ type: "speed", value: speed });
         }
@@ -136,6 +139,10 @@
     });
     document.getElementById("slower").addEventListener("click", () => setSpeed(speed - SPEED_STEP, true));
     document.getElementById("faster").addEventListener("click", () => setSpeed(speed + SPEED_STEP, true));
+    speedSelect.addEventListener("change", () => {
+        setSpeed(Number(speedSelect.value), true);
+        speedSelect.blur();
+    });
     // While dragging, only the label and the panel's audio follow; the extension hears the final value.
     speedSlider.addEventListener("input", () => setSpeed(Number(speedSlider.value), false));
     speedSlider.addEventListener("change", () => {

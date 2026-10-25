@@ -183,7 +183,9 @@ body.vscode-high-contrast {
 }
 
 #speed {
-    min-width: 3.8em;
+    width: 5.6em;
+    min-width: 5.6em;
+    padding-inline: 4px;
     text-align: center;
     font-variant-numeric: tabular-nums;
 }

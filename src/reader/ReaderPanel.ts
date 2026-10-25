@@ -440,7 +440,13 @@ export class ReaderPanel {
         <div class="speed">
           <button id="slower" type="button" title="Slower (-)" aria-label="Decrease speed">−</button>
           <input type="range" id="speedSlider" min="${SPEED.min}" max="${SPEED.max}" step="${SPEED.step}" title="Playback speed">
-          <span id="speed" aria-hidden="true"></span>
+          <select id="speed" title="Playback speed presets" aria-label="Playback speed presets">
+            <option id="customSpeed" value="custom" hidden disabled></option>
+            <option value="1">1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5" selected>1.5×</option>
+            <option value="2">2×</option>
+          </select>
           <button id="faster" type="button" title="Faster (+)" aria-label="Increase speed">+</button>
         </div>
       </div>

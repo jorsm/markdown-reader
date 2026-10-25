@@ -1,6 +1,6 @@
 {
-    "name": "spec-reader",
-    "displayName": "Spec Reader",
+    "name": "markdown-reader",
+    "displayName": "Markdown Reader",
     "description": "Listen to a Markdown file while you follow it with your eyes: click a sentence and it is read aloud from there, highlighted as it goes.",
     "publisher": "jorsm",
     "version": "0.0.1",

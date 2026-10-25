@@ -17,3 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - Reopening the reader after closing its panel works again: it no longer fails with "Webview is disposed". Stopping while a sentence is being loaded no longer plays it anyway.
+- Invalid or rejected replacement Inworld keys keep the previous working key. New keys are checked with the free voice-list request, and accepted keys refresh open panels.
+- Truncated synthesis responses and empty audio are rejected before caching, allowing the sentence to be retried.
+- Pausing while webview audio loads prevents it from starting until playback is resumed.
+- Windows uses webview playback rather than selecting ffplay, whose native pause controls require POSIX signals.
+- Concurrent requests for identical audio share one synthesis in a window; independent windows use separate temporary cache files.
+- Starting playback in another reader stops the previous panel and updates its controls. Opening or closing an idle panel leaves playback running.
+- Spend history is appended to dated files per window, so windows cannot overwrite each other's totals; existing history is preserved.
+- Sentence splitting preserves Markdown formatting and reference links, speaks link labels without their destinations, and handles locale-specific sentence boundaries.

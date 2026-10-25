@@ -440,21 +440,23 @@ export class ReaderPanel {
         <div class="speed">
           <button id="slower" type="button" title="Slower (-)" aria-label="Decrease speed">−</button>
           <input type="range" id="speedSlider" min="${SPEED.min}" max="${SPEED.max}" step="${SPEED.step}" title="Playback speed">
-          <select id="speed" title="Playback speed presets" aria-label="Playback speed presets">
-            <option id="customSpeed" value="custom" hidden disabled></option>
-            <option value="1">1×</option>
-            <option value="1.25">1.25×</option>
-            <option value="1.5" selected>1.5×</option>
-            <option value="2">2×</option>
-          </select>
+          <span class="select-control">
+            <select id="speed" title="Playback speed presets" aria-label="Playback speed presets">
+              <option id="customSpeed" value="custom" hidden disabled></option>
+              <option value="1">1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5" selected>1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </span>
           <button id="faster" type="button" title="Faster (+)" aria-label="Increase speed">+</button>
         </div>
       </div>
     </div>
     <div class="voice-controls">
-      <div class="picker"><label class="control-label" for="language">Language</label><select id="language" title="Language"></select></div>
-      <div class="picker voice-picker"><label class="control-label" for="voice">Voice</label><select id="voice" title="Voice"></select></div>
-      <div class="picker model-picker"><label class="control-label" for="model">Model</label><select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"></select></div>
+      <div class="picker"><label class="control-label" for="language">Language</label><span class="select-control"><select id="language" title="Language"></select></span></div>
+      <div class="picker voice-picker"><label class="control-label" for="voice">Voice</label><span class="select-control"><select id="voice" title="Voice"></select></span></div>
+      <div class="picker model-picker"><label class="control-label" for="model">Model</label><span class="select-control"><select id="model" title="Inworld model: Flash is faster and cheaper, TTS-2 sounds better"></select></span></div>
     </div>
   </div>
   <div class="toolbar-meta">

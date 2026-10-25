@@ -82,12 +82,12 @@ body.vscode-high-contrast {
 
 .toolbar button,
 .toolbar select {
-    height: 28px;
+    height: 22px;
     font: inherit;
     color: var(--vscode-foreground);
     background: transparent;
     border: 1px solid var(--vscode-contrastBorder, transparent);
-    border-radius: 3px;
+    border-radius: 2px;
     cursor: pointer;
 }
 
@@ -95,7 +95,7 @@ body.vscode-high-contrast {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
+    width: 22px;
     padding: 0;
 }
 
@@ -115,9 +115,7 @@ body.vscode-high-contrast {
 }
 
 .toolbar .play-button {
-    width: 32px;
-    height: 32px;
-    margin-bottom: -2px;
+    width: 28px;
     color: var(--vscode-button-foreground);
     background: var(--vscode-button-background);
     border-color: var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
@@ -142,13 +140,35 @@ body.vscode-high-contrast {
 }
 
 .toolbar select {
+    appearance: none;
+    display: block;
     width: 100%;
     min-width: 0;
-    padding: 2px 6px;
+    padding: 0 24px 0 8px;
     color: var(--vscode-dropdown-foreground);
     background: var(--vscode-dropdown-background);
     border-color: var(--vscode-dropdown-border, var(--vscode-contrastBorder, transparent));
     text-overflow: ellipsis;
+}
+
+.select-control {
+    position: relative;
+    display: block;
+    min-width: 0;
+    color: var(--vscode-dropdown-foreground);
+}
+
+.select-control::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 9px;
+    width: 6px;
+    height: 6px;
+    border-right: 1px solid currentColor;
+    border-bottom: 1px solid currentColor;
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
 }
 
 .speed {
@@ -160,7 +180,7 @@ body.vscode-high-contrast {
 #speedSlider {
     appearance: none;
     width: 80px;
-    height: 28px;
+    height: 22px;
     margin: 0 4px;
     background: transparent;
     cursor: pointer;
@@ -185,8 +205,7 @@ body.vscode-high-contrast {
 #speed {
     width: 5.6em;
     min-width: 5.6em;
-    padding-inline: 4px;
-    text-align: center;
+    padding-inline: 6px 22px;
     font-variant-numeric: tabular-nums;
 }
 

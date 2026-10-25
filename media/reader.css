@@ -97,14 +97,14 @@ body.vscode-high-contrast {
     justify-content: center;
     width: 22px;
     padding: 0;
+    color: var(--vscode-button-secondaryForeground);
+    background: var(--vscode-button-secondaryBackground);
+    border-color: var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
 }
 
-.toolbar button:hover {
-    background: var(--vscode-toolbar-hoverBackground);
-}
-
+.toolbar button:hover,
 .toolbar button:active {
-    background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+    background: var(--vscode-button-secondaryHoverBackground);
 }
 
 .toolbar button:focus-visible,

@@ -4,6 +4,7 @@ import type { Telemetry } from "../telemetry/Telemetry";
 import { contextFor, renderDocument, type Unit } from "../text/units";
 import { InworldError, type InworldClient, type Voice } from "../tts/InworldClient";
 import { WebviewOutput, type AudioOutput } from "./AudioOutput";
+import { PlaybackCoordinator } from "./PlaybackCoordinator";
 import { NotWantedError, Scheduler } from "./Scheduler";
 import { errorMessage, exists, type Synthesizer } from "./Synthesizer";
 
@@ -48,6 +49,7 @@ interface Choice {
  */
 export class ReaderPanel {
     private static readonly panels = new Map<string, ReaderPanel>();
+    private static readonly playback = new PlaybackCoordinator();
 
     private units: Unit[] = [];
     private byId = new Map<string, Unit>();
@@ -219,7 +221,7 @@ export class ReaderPanel {
         return (available.find((v) => v.voiceId === wanted) ?? available.find((v) => v.voiceId === DEFAULT_VOICES[language]) ?? available[0]!).voiceId;
     }
 
-    /** Switches the Inworld model for every panel, like the setting it writes. Audio already made with either model stays cached. */
+    /** Updates the global model preference and resets this panel; other open panels keep their prepared audio. */
     private async chooseModel(value: string): Promise<void> {
         this.resetPlayback();
         await config().update("model", value, vscode.ConfigurationTarget.Global);
@@ -312,12 +314,13 @@ export class ReaderPanel {
                 unit = current ? this.units[current.index + 1] : this.units.find((u) => u.line > line);
             }
             if (session === this.session) {
+                ReaderPanel.playback.release(this);
                 this.setState("stopped");
             }
         } catch (error) {
             if (session === this.session && !(error instanceof NotWantedError)) {
                 this.notifyError(error);
-                this.setState("stopped");
+                this.stopPlayback();
             }
         } finally {
             if (played) {
@@ -329,6 +332,7 @@ export class ReaderPanel {
     /** Ends any playback sequence and starts a new session in the playing state. */
     private restart(): number {
         this.stopPlayback();
+        ReaderPanel.playback.claim(this, () => this.resetPlayback());
         this.setState("playing");
         return this.session;
     }
@@ -356,7 +360,9 @@ export class ReaderPanel {
 
     private stopPlayback(): void {
         this.session++;
-        this.output.stop();
+        if (ReaderPanel.playback.release(this)) {
+            this.output.stop();
+        }
         this.setState("stopped");
         this.onResume?.();
     }

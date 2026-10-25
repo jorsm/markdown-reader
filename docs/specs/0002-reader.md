@@ -3,7 +3,7 @@ id: "0002"
 title: Reader
 description: The read-along panel for Markdown files (click a sentence, hear it from there, highlighted), its text pipeline, Inworld TTS with language and voice selection, audio cache, local telemetry and spend tracking.
 status: accepted
-date: 2026-10-21
+date: 2026-10-25
 supersedes: none
 code:
     - src/
@@ -33,6 +33,7 @@ Open any Markdown file in a reading panel next to the editor, click a sentence, 
 - Several voices in one document, voice cloning or voice design.
 - Word-level highlighting. Inworld can return word timestamps (`timestampType: WORD`); a later spec can use them.
 - Publishing to the Marketplace.
+- Bundling or downloading FFmpeg/ffplay with the extension.
 
 ## Considered options
 
@@ -73,6 +74,20 @@ Cost does not decide: every candidate costs under a dollar per spec, and re-list
 
 The first request pays the TLS handshake (~300 ms), so connections are kept alive. The default US endpoint is used: Inworld's EU region (`api.eu.inworld.ai`) is a separate deployment sold only through enterprise contracts, with its own workspaces and keys, so a self-serve key is unknown there (403, "API key does not exist"). 16 requests give no p95: that is D3's job.
 
+### Where audio plays
+
+The draft (PR "draft reader") showed two limits of VS Code's webview, both measured in VS Code 1.142 (snap) on Linux:
+
+- It cannot decode Opus: WebAudio fails on a valid Ogg Opus file while MP3, WAV, FLAC and Vorbis decode, although `canPlayType` answers "probably". Hence MP3.
+- In the snap build it has no sound at all: the snap ships only ALSA (`libasound`), so the audio element advances in silence and PipeWire shows no stream.
+
+| Option                                                                | Pros                                                                                                                   | Cons                                                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Audio element in the webview                                          | No dependency; speed with pitch kept (`preservesPitch`)                                                                | Silent in the snap build; codec support varies by build                                                              |
+| **ffplay (FFmpeg) run by the extension host** (chosen when available) | Talks to the system's audio server directly; `atempo` keeps the pitch; same approach as other VS Code audio extensions | Needs FFmpeg installed; a speed change applies from the next unit; pause relies on SIGSTOP/SIGCONT (Linux and macOS) |
+
+VS Code [documents MP3 playback in webviews](https://code.visualstudio.com/api/extension-guides/webview#supported-media-formats), so the webview provides a path without ffplay on Windows and other builds with working webview audio. This is supported by the documented API and the draft's MP3 fallback, not by a Windows playback measurement here. The Linux snap limitation above does not make FFmpeg a requirement on every platform.
+
 ### Text processing
 
 | Option                                                               | Pros                               | Cons                                          |
@@ -96,16 +111,27 @@ Made by the owner on 21 Oct 2026:
 - Engine: Inworld. Default model `inworld-tts-2-flash` (fastest and cheapest; its lack of steering does not matter for verbatim narration); `inworld-tts-2` is selectable. D3 confirms the default on the worst case.
 - Language and voice are chosen in the panel.
 
+Resolved by the owner on 25 Oct 2026:
+
+- FFmpeg/ffplay is an optional, separately installed dependency. When it is unavailable in `auto` mode, warn with a **Do not show this message again** option and continue through the webview.
+- Spend remains visible without budget alerts or a budget limit that stops synthesis.
+- Click-to-first-sound targets remain p95 at most 1 s cold and 200 ms warm.
+- Code block contents are skipped; each block is announced with the fixed sentence "See code block." rather than skipped silently.
+- Keep the button-plus-click workflow. Moving the editor cursor does not select a playback start point or start playback.
+
 ## Behavior and invariants
 
 ### Panel
 
 - A button in the editor title bar for Markdown files, and the command **Markdown Reader: Open Reader**, open the panel beside the editor for the active file.
 - The panel renders the file with `markdown-it`. YAML frontmatter is not shown or read.
-- A toolbar at the top of the panel has a **language** selector (Inworld's 15 tier-1 languages, English first) and a **voice** selector listing the voices whose original language matches, with their description as tooltip. The language and voice are remembered per document, falling back to the last ones used; the first defaults are English with Elliot and Italian with Orietta. Changing either stops playback and empties the prepared units, not the cache.
-- Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. Code blocks are units that are skipped, not read (see Open questions).
+- A toolbar at the top of the panel has a **language** selector (Inworld's 15 tier-1 languages, English first) and a **voice** selector listing the voices whose original language matches, with their description as tooltip. The language and voice are remembered per document, falling back to the last ones used; the first defaults are English with Jason and Italian with Orietta. Changing either stops playback and empties the prepared units, not the cache.
+- The toolbar also has a **model** selector (Flash or TTS-2) that writes `markdownReader.model`; switching drops the prepared units, and audio made with either model stays cached.
+- Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. A code block stays rendered and has one code unit linked to its source lines; playing that unit announces the fixed cue below and then continues, without reading the block's contents.
 - Clicking a unit plays from it. The playing unit is highlighted and kept in view.
-- Keys in the panel: Space play/pause; ← → previous/next unit; `+`/`-` speed in 0.25 steps from 1× to 2.5×; `E` reveals the playing unit's source line in the editor. Double-click on a unit also reveals its line.
+- The panel does not follow the editor cursor. Opening the panel with the button or command and clicking a unit remains the way to choose where reading starts.
+- **Speed** from 0.75× to 3×: a slider in the toolbar (steps of 0.05) for big changes in one gesture, and `+`/`-` for fine ones (steps of 0.1). The speed is remembered across panels. Steps of 0.25 were too coarse to settle on a comfortable pace (owner, 22 Oct 2026).
+- Keys in the panel: Space play/pause; ← → previous/next unit; `+`/`-` speed; `E` reveals the playing unit's source line in the editor. Double-click on a unit also reveals its line.
 - On save, the panel re-renders. Playback continues from the same unit if it still exists, otherwise it pauses at the nearest following unit.
 
 ### Text pipeline
@@ -116,9 +142,10 @@ Made by the owner on 21 Oct 2026:
     - speaks link text only, never URLs;
     - marks bold text as `emphasis`;
     - reads a table's header row once, then each row with a short pause between cells. No words are added.
-- **Verbatim guard:** every processor's output must contain the source words of the unit, in order, apart from the documented code rules. A processor whose output fails the guard for a unit falls back to the deterministic one for that unit, and the failure is logged (metadata only). This is what lets an LLM processor be swapped in safely.
+    - replaces each fenced or indented code block with one fixed cue: "See code block." in English, "Vedi blocco di codice." in Italian, and the English cue for other languages until a translation is provided. Block contents are not spoken or included in synthesis context. The cue uses the ordinary audio cache; it needs no separate cache, pre-generated audio or special caching mechanism.
+- **Verbatim guard:** every processor's output must contain the source words of the unit, in order, apart from the documented inline-code rules and code-block cue. For a code block, only the fixed cue for the selected language is accepted; the exception does not permit arbitrary replacement text. A processor whose output fails the guard for a unit falls back to the deterministic one for that unit, and the failure is logged (metadata only). This is what lets an LLM processor be swapped in safely.
 - Each **engine adapter** renders segments into its own markup and returns audio. The Inworld adapter:
-    - streams from `POST /tts/v1/voice:stream` with `modelId`, `voiceId`, `language` and MP3 output, reading the NDJSON lines and treating an in-stream `error` as a failed request;
+    - streams from `POST /tts/v1/voice:stream` with `modelId`, `voiceId`, `language` and MP3 output, reading the NDJSON lines and treating an in-stream `error` as a failed request. Never Ogg Opus: VS Code's webview can't decode it;
     - renders `pause` as `<break time="…ms" />`, at most 20 per request (Inworld ignores the rest); `emphasis` becomes plain text, since Flash has no emphasis control;
     - sends the preceding units of the same section, at most 5 units and 2,000 characters (Inworld rejects more with a 400), as `synthesisContext.previousRequests`, which Inworld uses for intonation and does not bill or speak. D3 checks that it helps;
     - keeps the HTTP connection alive between requests.
@@ -130,7 +157,15 @@ Made by the owner on 21 Oct 2026:
 - One synthesis request per unit. Audio is cached on disk in the extension's global storage, keyed by a hash of engine, model, voice, language, processor id and version, and spoken segments. Re-listening never calls the engine; editing a sentence re-synthesizes only that unit.
 - From the playing unit, the next N units (default 6) are prepared with up to C requests in flight (default 3). A click elsewhere cancels in-flight requests outside the new window.
 - Speed is applied by the player with pitch preserved. Changing speed never re-synthesizes.
+- **Audio output** (setting `markdownReader.audioOutput`): `auto` (default) plays through ffplay when it runs on the machine and falls back to the webview's audio element; `ffplay` and `webview` force one. With ffplay the extension host sequences the units (play, inserted pause, next) and the panel only highlights and sends commands; a speed change applies from the next unit. A "Markdown Reader" output channel logs which output is in use and, when ffplay is unusable, why.
+- FFmpeg/ffplay is never bundled or automatically downloaded. When opening a reader in `auto` mode and ffplay is missing or cannot run, show a non-blocking warning that playback will use the webview and that installing ffplay may help if the webview is silent. Offer **Do not show this message again**, remembered in the extension's global state across sessions; otherwise show the warning at most once per session. Selecting `webview` explicitly does not warn about an unused dependency. Forced `ffplay` mode reports an unavailable output instead of silently falling back. Suppressing the optional availability warning never suppresses actual playback errors.
 - The Inworld key is kept in `SecretStorage` (command **Markdown Reader: Set API Key**). It stays in the extension host: the webview never sees it, and it is never written to settings, logs or telemetry.
+- **The key is validated when it is entered**, before it is stored, with a call that synthesizes nothing and bills nothing (the voice list):
+    - accepted (200): stored, and the open panels reload their voice list;
+    - rejected (401 or 403): not stored; the error says Inworld rejected the key and offers to enter it again. The previously stored key, if any, stays;
+    - not checkable (network error, timeout, 5xx): stored, with a warning that it could not be verified. A wrong key then shows up at the first request.
+- Before the call, the input is trimmed and checked to be Base64 that decodes to `key:secret`, the shape of the portal's Basic credential; anything else is refused without calling Inworld.
+- A request that fails later with 401 or 403 (key revoked or deleted) pauses playback and offers to enter a new key; it is not retried.
 - The text of the file goes to the chosen engine's provider and nowhere else.
 
 ### Telemetry
@@ -145,14 +180,15 @@ Made by the owner on 21 Oct 2026:
 - **Estimated cost** is characters billed times the model's rate per million characters, from the setting `markdownReader.pricePerMillionCharacters`. Its default is the on-demand list price on 21 Oct 2026: `inworld-tts-2-flash` 15 $, `inworld-tts-2` 25 $. Inworld's prices change and higher plans pay less, so the setting is the place to correct them; the figure is an estimate, and the Inworld portal's usage page remains the authority.
 - A **spend ledger** keeps one total per day and model (characters billed, estimated cost, requests, cache hits) in the extension's global storage. Unlike the raw events it is never deleted, so month and all-time totals survive the 30-day telemetry retention.
 - The panel toolbar shows the estimated spend of the current session and of the current month. The summary command adds spend per day for the last 30 days, per month, per model, and per document (by workspace-relative path; the path is metadata, the content is not recorded).
+- Spend tracking is informational: no budget setting, budget alert or spending threshold that stops synthesis.
 
 ## Deliverables
 
 - [ ] D1. Telemetry writer, retention, the event schema above and the spend ledger, with a test that a document's text never reaches the files.
-- [ ] D2. Markdown to units, the segment format, the `TextProcessor` interface, the deterministic processor and the verbatim guard, tested on real specs.
+- [ ] D2. Markdown to units, the segment format, the `TextProcessor` interface, the deterministic processor (including fixed code-block cues) and the verbatim guard, tested on real specs.
 - [ ] D3. `scripts/tts-bench.mjs` and its results: see below.
 - [ ] D4. The Inworld adapter, the voice list, the key command and the audio cache.
-- [ ] D5. The panel and player: rendering, language and voice selectors, the spend display, click to play, highlight, keys, jump to source, re-render on save, scheduling, inserted pauses, `stall` and `play_start` events.
+- [ ] D5. The panel and player: rendering, language and voice selectors, the spend display, click to play, highlight, keys, jump to source, re-render on save, scheduling, inserted pauses, ffplay detection and the suppressible fallback warning, `stall` and `play_start` events.
 - [ ] D6. The telemetry and spend summary command and a local `.vsix` build.
 
 ### D3. Inworld benchmark
@@ -179,10 +215,12 @@ Made by the owner on 21 Oct 2026:
 - Changing speed during playback makes no `synth` request. Catches speed applied by the engine instead of the player.
 - Switching the voice and back plays the earlier units from the cache (`cacheHit: true`). Catches a cache key that ignores the voice.
 - The Inworld key appears in no file under the extension's storage, no log line and no message to the webview (search for it after a session). Catches a leaked credential.
+- Entering a key Inworld rejects leaves the stored key unchanged and shows the rejection; entering a malformed key makes no request. Catches a wrong key replacing a working one, or a typo reaching Inworld.
+- With the network down, entering a key stores it with a warning. Catches a validation that blocks setup offline.
+- With ffplay unavailable in `auto` mode, opening the reader shows the warning and selects webview playback. Choosing **Do not show this message again** prevents the warning after reopening VS Code, while playback failures are still reported. Catches a mandatory FFmpeg dependency or a suppression choice that is not persisted.
+- A document with fenced and indented code blocks announces exactly one fixed cue per block; neither speech requests nor synthesis context contain the block contents. The verbatim guard accepts the fixed cue and rejects another replacement. Catches code being read aloud or an overly broad guard exception.
+- Moving the editor cursor does not change the selected speech unit or start playback. Catches cursor-following behavior replacing the accepted button-plus-click workflow.
 
 ## Open questions
 
-- Should a monthly budget (e.g. `markdownReader.monthlyBudgetUsd`) warn or stop synthesis when reached, or is seeing the spend enough?
-- Latency targets: are 1 s (cold) and 200 ms (warm) for click to first sound the right bar?
-- Code blocks: skip silently (current proposal), or read them?
-- Should the panel follow the editor's cursor (click in the source to set the start point), or is the button-plus-click flow enough for now?
+None. The decisions above resolve the remaining questions; implementation deliverables remain open.

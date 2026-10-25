@@ -14,6 +14,9 @@ export class NativePlayer implements AudioOutput {
 
     /** The player, or why ffplay can't be used (not on the PATH, or it fails to run). */
     static async find(binary = "ffplay"): Promise<{ player: NativePlayer } | { error: string }> {
+        if (process.platform === "win32") {
+            return { error: "ffplay pause/resume requires POSIX signals, which Windows does not support; use webview audio." };
+        }
         return new Promise((resolve) => {
             execFile(binary, ["-version"], { env: hostEnv(), timeout: 5000 }, (error, _stdout, stderr) => resolve(error ? { error: `${error.message} ${String(stderr).trim().slice(-300)}`.trim() } : { player: new NativePlayer(binary) }));
         });

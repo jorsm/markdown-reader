@@ -94,3 +94,22 @@ test("clearing the cache tells listeners first, then deletes every audio file", 
     await synthesizer.ensure(job);
     assert.equal(calls.length, 2, "a cleared unit is synthesized again");
 });
+
+test("a truncated response leaves no cached audio, so a later attempt can synthesize the sentence", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "markdown-reader-"));
+    let requests = 0;
+    const client = new InworldClient(
+        async () => KEY,
+        async () => {
+            requests++;
+            return requests === 1 ? new Response('{"audioContent":', { status: 200 }) : new Response(JSON.stringify({ audioContent: Buffer.from("ID3 fake audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 });
+        },
+    );
+    const synthesizer = new Synthesizer(join(dir, "audio"), client, new Telemetry(dir), () => ({}));
+    const job = { text: "A real sentence.", voiceId: "Jason", modelId: "inworld-tts-2-flash", language: "en", context: [], doc: "probe.md" };
+    await assert.rejects(synthesizer.ensure(job), /unreadable JSON response/);
+    assert.deepEqual(readdirSync(join(dir, "audio")), [], "a failed response must not poison the audio cache");
+    const file = await synthesizer.ensure(job);
+    assert.equal(readFileSync(file, "utf8"), "ID3 fake audio");
+    assert.equal(requests, 2, "the retry must reach the provider instead of finding an empty cache entry");
+});

@@ -62,7 +62,13 @@ export class InworldClient {
             body.synthesisContext = { previousRequests: request.context.map((text) => ({ text })) };
         }
         const json = await this.call("/voice", { method: "POST", body: JSON.stringify(body), ...(signal ? { signal } : {}) });
-        const audio = Buffer.from(String(json.audioContent ?? ""), "base64");
+        if (typeof json?.audioContent !== "string" || !json.audioContent.trim()) {
+            throw new Error("Inworld returned no audio.");
+        }
+        const audio = Buffer.from(json.audioContent, "base64");
+        if (!audio.length) {
+            throw new Error("Inworld returned no audio.");
+        }
         return {
             audio,
             charsBilled: Number(json.usage?.processedCharactersCount ?? 0),
@@ -90,8 +96,14 @@ export class InworldClient {
               ])
             : timeout;
         const response = await this.fetchImpl(`${API}${path}`, { ...init, signal, headers: { Authorization: `Basic ${key}`, "Content-Type": "application/json" } });
-        // An error body that isn't JSON still yields the status below.
-        const json: any = await response.json().catch(() => ({}));
+        // A non-JSON error body still yields its HTTP status; an unreadable success must not become cached audio.
+        const json: any = await response.json().catch((error: unknown) => {
+            signal.throwIfAborted();
+            if (response.ok) {
+                throw new Error("Inworld returned an unreadable JSON response.", { cause: error });
+            }
+            return {};
+        });
         if (!response.ok) {
             throw new InworldError(response.status, `Inworld ${response.status}: ${json?.message ?? json?.error?.message ?? response.statusText}`);
         }

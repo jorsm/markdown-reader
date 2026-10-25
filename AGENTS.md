@@ -6,6 +6,8 @@ Instructions for coding agents (Claude Code first; Codex and VS Code Copilot cha
 
 A VS Code extension ("Markdown Reader") for listening to a Markdown file while following it with the eyes: click a sentence and it is read aloud from there, highlighted as it goes, so long specs can be re-read fast and edited where needed. Speech comes from Inworld TTS; spec 0002 governs the reader. The current code is a draft that validates the idea; its deliverables are rebuilt one PR at a time.
 
+The desktop extension runs in the local UI extension host, also in Remote SSH windows: ffplay, synthesis and storage belong to the client. Read workspace documents through VS Code APIs and preserve their URIs; a remote document's `fsPath` is not a local path.
+
 ## Before you change anything
 
 1. Read `docs/specs/index.md`. Open every spec whose `code` paths include files you will touch, and follow it.

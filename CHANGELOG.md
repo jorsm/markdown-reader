@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - The extension's identity and display name now match Markdown Reader (`jorsm.markdown-reader`).
+- The reader toolbar groups playback and voice controls, labels selectors and gives play/pause a clear icon. It follows the VS Code theme, shows keyboard focus and wraps in narrow editor columns; status and estimated spend use a secondary row.
 
 ### Fixed
 

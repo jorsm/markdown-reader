@@ -7,6 +7,7 @@
     const SPEED_STEP = 0.1;
 
     const doc = document.getElementById("doc");
+    const toolbar = document.getElementById("toolbar");
     const playButton = document.getElementById("play");
     const speedLabel = document.getElementById("speed");
     const speedSlider = document.getElementById("speedSlider");
@@ -33,7 +34,10 @@
 
     function setState(next) {
         state = next;
-        playButton.textContent = state === "playing" ? "⏸" : "▶";
+        const action = state === "playing" ? "Pause" : state === "paused" ? "Resume" : "Play";
+        playButton.dataset.state = state;
+        playButton.setAttribute("aria-label", action);
+        playButton.title = `${action} (Space)`;
         if (state === "stopped") {
             status("");
         }
@@ -46,6 +50,7 @@
 
     function showSpeed() {
         speedLabel.textContent = `${speed.toFixed(2)}×`;
+        speedSlider.setAttribute("aria-valuetext", `${speed.toFixed(2)} times normal speed`);
     }
 
     /**
@@ -66,7 +71,7 @@
     }
 
     function showSpend(spend) {
-        spendLabel.textContent = `$${spend.session.toFixed(4)} · $${spend.month.toFixed(2)}/month`;
+        spendLabel.textContent = `Session $${spend.session.toFixed(4)} · Month $${spend.month.toFixed(2)}`;
     }
 
     function fillSelect(select, entries, value) {
@@ -94,7 +99,7 @@
         }
         el.classList.add("playing");
         const rect = el.getBoundingClientRect();
-        if (rect.top < 60 || rect.bottom > window.innerHeight - 40) {
+        if (rect.top < toolbar.getBoundingClientRect().bottom + 12 || rect.bottom > window.innerHeight - 40) {
             el.scrollIntoView({ block: "center", behavior: "smooth" });
         }
     }
@@ -231,7 +236,7 @@
                 highlight();
                 break;
             case "waiting":
-                status("…");
+                status("Preparing audio…");
                 break;
             case "state":
                 setState(data.state);

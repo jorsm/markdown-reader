@@ -2,7 +2,7 @@
 id: "0001"
 title: Repo harness
 description: Specs, PR workflow, agent instructions, local branch protection and the check gate that every later change relies on.
-status: accepted
+status: implemented
 date: 2026-10-21
 supersedes: none
 code:
@@ -26,12 +26,12 @@ The repo is also a second trial of the spec-driven workflow used in `jorsm/verte
 ## Context
 
 - The harness is copied from `vertex-ai-models-chat-provider` (its spec 0001), where it was introduced on a mature codebase. Here it exists before any feature code, so every feature starts as a spec.
-- The repo stays local until the reader proves useful, so there is no remote, no CI and no server-side branch protection. The local hooks stand in for them until then.
-- The harness itself was committed once on `main` and `develop` with hooks disabled (`HUSKY=0`), because the hooks it installs block exactly that. Every later change goes through a branch.
+- The repo started local, with the hooks standing in for a remote, CI and server-side branch protection. It was published as `jorsm/markdown-reader` on 21 Oct 2026 (D7).
+- The harness itself was committed once on `main` and `develop` with hooks disabled (`HUSKY=0`), because the hooks it installs block exactly that, and pushed the same way when the repo was created. Every later change goes through a branch and a PR.
 
 ## Non-goals
 
-- Publishing to GitHub or the Marketplace. That is D7, done when the owner decides.
+- Publishing to the Marketplace.
 - Any reader feature. Those start in spec 0002.
 
 ## Decisions
@@ -39,10 +39,10 @@ The repo is also a second trial of the spec-driven workflow used in `jorsm/verte
 | Decision                                                                | Consequence for the harness                                                                                                                     |
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plans are tracked as specs in the repo                                  | `docs/specs/` is the only place for plans, designs and decisions                                                                                |
-| Work happens on branches reviewed by the owner                          | Every change, specs included, reaches `develop` through a reviewed branch: a PR once published, a local `git merge --no-ff` until then          |
+| Work happens on branches reviewed by the owner                          | Every change, specs included, reaches `develop` through a PR                                                                                    |
 | Main agent is Claude Code; Codex and VS Code Copilot chat are supported | One root `AGENTS.md`, no `CLAUDE.md`. Claude Code-only features (skills, hooks) are conveniences; the gate every agent meets is `npm run check` |
 | The owner works alone, through agents, and reviews every branch         | No approving review is required; the gate is `npm run check`                                                                                    |
-| Not published until the reader proves useful (21 Oct 2026)              | Local hooks protect `develop` and `main`; CI and GitHub branch protection wait for D7                                                           |
+| Published as a public repo, `jorsm/markdown-reader` (21 Oct 2026)       | CI and GitHub branch protection gate `develop` and `main`; the local hooks stay as an early guard                                               |
 | Repo text is public once published                                      | Specs, commits and PR texts carry no private remarks, credentials or identifiers                                                                |
 
 ## Deliverables
@@ -73,15 +73,14 @@ One root file, at most 150 lines: what this is, a map of what exists, commands, 
 
 - **Branches:** `spec/NNNN-slug` for spec-only work, otherwise `feat/…`, `fix/…`, `chore/…` or `test/…`, always cut from `develop`, one concern each. Conventional Commits.
 - **Before review:** the `prepare-pr` project skill (`.claude/skills/prepare-pr/SKILL.md`) is the one place that states the order of checks, reviews, spec and CHANGELOG updates and `align-agents-md`.
-- **Review until published:** the agent ends with the filled PR template in its report; the owner reviews the branch diff and merges it into `develop` with `git merge --no-ff`.
-- **After publishing:** PRs against `develop` from `.github/pull_request_template.md`. `main` only receives release merges from `develop`.
+- **Review:** PRs against `develop` from `.github/pull_request_template.md`; the owner reviews and merges. `main` only receives release merges from `develop`. Before D7, the owner merged reviewed branches locally with `git merge --no-ff`.
 
 ### D4. Check gate
 
 - [x] Delivered
 
 - `npm run check`: Prettier check, ESLint with zero warnings, compile and `node --test`.
-- Husky `pre-push` runs it. Claude Code only: a `Stop` hook (`.claude/settings.json`) runs it before the agent finishes and hands failures back.
+- CI (`.github/workflows/ci.yml`, job `build`) runs it on pushes and PRs to `develop` and `main`. Husky `pre-push` runs it locally. Claude Code only: a `Stop` hook (`.claude/settings.json`) runs it before the agent finishes and hands failures back.
 
 ### D5. Local branch protection
 
@@ -99,17 +98,17 @@ In `AGENTS.md`: tests assert on what the user or VS Code observes (text, audio r
 
 ### D7. Publish
 
-- [ ] Delivered
+- [x] Delivered
 
-When the owner decides to keep the project: create the GitHub repository, push `main` and `develop` once with `HUSKY=0`, add a CI workflow running `npm run check` on pushes and PRs to `develop` and `main`, and enable branch protection on both (PR required, the CI check required, zero approvals, enforced for admins, no force pushes or deletions). Update `AGENTS.md` and D3 to drop the local-merge path.
+Create the public GitHub repository `jorsm/markdown-reader` with `develop` as default branch, push `main` and `develop` once with `HUSKY=0`, add a CI workflow running `npm run check` on pushes and PRs to `develop` and `main`, and enable branch protection on both (PR required, the CI check required, zero approvals, enforced for admins, no force pushes or deletions). Update `AGENTS.md` and D3 to drop the local-merge path, and add the MIT `LICENSE` that `package.json` declares.
 
 ## Acceptance checks
 
 - `git commit` on `develop` or `main` fails with the branch-protection message; on a feature branch it succeeds. Catches a hook that was not installed by `npm ci`.
 - `git push <remote> develop` fails before contacting the remote. Catches a pre-push hook that only runs checks.
-- `npm run check` passes on a clean checkout. Catches a harness that cannot gate anything.
+- `npm run check` passes on a clean checkout, and a PR that breaks it cannot merge into `develop`. Catches a harness that cannot gate anything.
 - `node .claude/skills/align-agents-md/scripts/check-references.mjs` reports no problems. Catches an `AGENTS.md` naming paths or scripts that don't exist.
 
 ## Open questions
 
-- D7 waits for the owner's decision on whether the project is worth keeping.
+None.

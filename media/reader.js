@@ -165,7 +165,7 @@
 
     // Audio element output: used only when the extension sends `play`.
     audio.addEventListener("ended", () => post({ type: "ended", token: audioToken }));
-    function playAudio(token, data) {
+    function playAudio(token, data, paused) {
         if (audioUrl) {
             URL.revokeObjectURL(audioUrl);
         }
@@ -173,7 +173,9 @@
         audioUrl = URL.createObjectURL(new Blob([data], { type: "audio/mpeg" }));
         audio.src = audioUrl;
         setRate();
-        audio.play().catch((error) => post({ type: "playError", token, message: error.message }));
+        if (!paused) {
+            audio.play().catch((error) => post({ type: "playError", token, message: error.message }));
+        }
     }
 
     window.addEventListener("message", ({ data }) => {
@@ -238,7 +240,7 @@
                 showSpend(data.spend);
                 break;
             case "play":
-                playAudio(data.token, data.data);
+                playAudio(data.token, data.data, data.paused);
                 break;
             case "pauseAudio":
                 audio.pause();

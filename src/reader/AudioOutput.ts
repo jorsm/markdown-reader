@@ -21,6 +21,7 @@ export interface AudioOutput {
  */
 export class WebviewOutput implements AudioOutput {
     private token = 0;
+    private paused = false;
     private pending: { token: number; resolve: (result: PlayResult) => void; reject: (error: Error) => void } | undefined;
 
     constructor(private readonly post: (message: unknown) => Thenable<boolean>) {}
@@ -34,7 +35,7 @@ export class WebviewOutput implements AudioOutput {
             return "stopped";
         }
         const done = new Promise<PlayResult>((resolve, reject) => (this.pending = { token, resolve, reject }));
-        await this.post({ type: "play", token, data, speed });
+        await this.post({ type: "play", token, data, speed, paused: this.paused });
         return done;
     }
 
@@ -54,17 +55,22 @@ export class WebviewOutput implements AudioOutput {
 
     /** Pauses the panel's audio element. */
     pause(): void {
+        this.paused = true;
         void this.post({ type: "pauseAudio" });
     }
 
     /** Resumes the panel's audio element. */
     resume(): void {
-        void this.post({ type: "resumeAudio" });
+        this.paused = false;
+        if (this.pending) {
+            void this.post({ type: "resumeAudio" });
+        }
     }
 
     /** Ends the unit playing now: its `play` promise resolves "stopped". */
     stop(): void {
         this.token++;
+        this.paused = false;
         this.pending?.resolve("stopped");
         this.pending = undefined;
         void this.post({ type: "stopAudio" });

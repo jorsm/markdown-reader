@@ -135,7 +135,7 @@ Resolved by the owner on 25 Oct 2026:
 - Every **speech unit** is a clickable span: a sentence in a paragraph or list item, a heading, a table row. A code block stays rendered and has one code unit linked to its source lines; playing that unit announces the fixed cue below and then continues, without reading the block's contents.
 - Clicking a unit plays from it. The playing unit is highlighted and kept in view.
 - The panel does not follow the editor cursor. Opening the panel with the button or command and clicking a unit remains the way to choose where reading starts.
-- **Speed** from 0.75× to 3×: a slider in the toolbar (steps of 0.05) for big changes in one gesture, and `+`/`-` for fine ones (steps of 0.1). The speed is remembered across panels. Steps of 0.25 were too coarse to settle on a comfortable pace (owner, 22 Oct 2026).
+- **Speed** from 0.75× to 3×: a slider in the toolbar (steps of 0.05) for big changes in one gesture, and `+`/`-` for fine ones (steps of 0.1). The existing speed readout is also a dropdown with exactly four selectable presets: 1×, 1.25×, 1.5× and 2×. Its closed value always follows the current speed, including intermediate values chosen with the slider or buttons; intermediate values are not added to the menu. No separate preset control is added. The speed is remembered across panels. Steps of 0.25 were too coarse to settle on a comfortable pace (owner, 22 Oct 2026).
 - Keys in the panel: Space play/pause; ← → previous/next unit; `+`/`-` speed; `E` reveals the playing unit's source line in the editor. Double-click on a unit also reveals its line.
 - On save, the panel re-renders. Playback continues from the same unit if it still exists, otherwise it pauses at the nearest following unit.
 

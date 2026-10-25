@@ -77,8 +77,8 @@
                         "webview"
                     ],
                     "enumDescriptions": [
-                        "ffplay when it is on the PATH, otherwise the panel.",
-                        "Always ffplay (FFmpeg), run by the extension; needed where the panel has no sound, such as the snap build of VS Code.",
+                        "The panel on Windows; ffplay when available on Linux and macOS, otherwise the panel.",
+                        "ffplay (FFmpeg) on Linux and macOS; uses the panel on Windows, where native pause is unavailable.",
                         "Always the panel's own audio element."
                     ],
                     "default": "auto",

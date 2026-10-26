@@ -61,6 +61,7 @@ export class ReaderPanel {
     private readonly output: AudioOutput;
     private readonly webviewOutput: WebviewOutput | undefined;
     private readonly disposables: vscode.Disposable[] = [];
+    private renderedText: string | undefined;
     /** Bumped by every start and stop, so a superseded playback sequence ends quietly. */
     private session = 0;
     private state: PlaybackState = "stopped";
@@ -91,7 +92,7 @@ export class ReaderPanel {
 
     private constructor(
         private readonly context: vscode.ExtensionContext,
-        private readonly document: vscode.TextDocument,
+        private document: vscode.TextDocument,
         private readonly deps: Deps,
     ) {
         this.speed = context.globalState.get<number>("markdownReader.speed") ?? SPEED.initial;
@@ -113,15 +114,42 @@ export class ReaderPanel {
         this.panel.webview.onDidReceiveMessage((m) => this.onMessage(m), undefined, this.disposables);
         this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
         this.disposables.push({ dispose: deps.synthesizer.onDidClear(() => this.resetPlayback()) });
-        vscode.workspace.onDidSaveTextDocument(
-            (d) => {
-                if (d === this.document) {
-                    this.render();
-                }
-            },
-            undefined,
-            this.disposables,
-        );
+        const refresh = (document: vscode.TextDocument) => this.refreshDocument(document);
+        vscode.workspace.onDidSaveTextDocument(refresh, undefined, this.disposables);
+        vscode.workspace.onDidOpenTextDocument(refresh, undefined, this.disposables);
+        vscode.workspace.onDidChangeTextDocument(({ document }) => refresh(document), undefined, this.disposables);
+        if (vscode.workspace.fs.isWritableFileSystem(document.uri.scheme)) {
+            const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(document.uri, "*"), false, false, true);
+            const reload = (uri: vscode.Uri) => void this.reloadClosedDocument(uri);
+            watcher.onDidChange(reload, undefined, this.disposables);
+            watcher.onDidCreate(reload, undefined, this.disposables);
+            this.disposables.push(watcher);
+        }
+    }
+
+    /** Refreshes clean content by URI, including a new document object after the source was reopened. */
+    private refreshDocument(document: vscode.TextDocument): void {
+        if (this.disposed || document.isClosed || document.uri.toString() !== this.document.uri.toString()) {
+            return;
+        }
+        this.document = document;
+        if (!document.isDirty && document.getText() !== this.renderedText) {
+            this.render();
+        }
+    }
+
+    /** Open documents reload through VS Code's text events; the watcher covers a source that VS Code closed. */
+    private async reloadClosedDocument(uri: vscode.Uri): Promise<void> {
+        if (this.disposed || !this.document.isClosed || uri.toString() !== this.document.uri.toString()) {
+            return;
+        }
+        try {
+            this.refreshDocument(await vscode.workspace.openTextDocument(uri));
+        } catch (error) {
+            if (!this.disposed) {
+                this.notifyError(error);
+            }
+        }
     }
 
     private dispose(): void {
@@ -174,7 +202,9 @@ export class ReaderPanel {
     }
 
     private render(): void {
-        const { html, units } = renderDocument(this.document.getText(), this.choice.language);
+        const text = this.document.getText();
+        const { html, units } = renderDocument(text, this.choice.language);
+        this.renderedText = text;
         this.units = units;
         this.byId = new Map(
             units.map(

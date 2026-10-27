@@ -14,9 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Webview audio is now the default on every platform, with immediate speed changes during a sentence. Existing `auto` settings also use the webview; ffplay remains an optional manual fallback on Linux and macOS.
 - The extension's identity and display name now match Markdown Reader (`jorsm.markdown-reader`).
+- The reader toolbar groups playback and voice controls, labels selectors and gives play/pause a clear icon. Compact dropdowns have consistent chevrons and thin borders; play/pause uses the theme's filled primary button style, and `+`/`−` use secondary buttons. It follows the VS Code theme, shows keyboard focus and wraps in narrow editor columns; status and estimated spend use a secondary row.
+- The current speed readout, immediately to the right of `+`, opens presets for 1×, 1.25×, 1.5× and 2×. Slider and button adjustments still show intermediate speeds without adding extra menu choices or controls.
 
 ### Fixed
 
+- Inline code identifiers such as `billings_consumption_daily_usage` are read as separate words, without saying "underscore" or "trattino basso". Their displayed spelling is unchanged, and cached audio with the old pronunciation is not reused.
+- Reader previews refresh after saved changes from external programs, including atomic file replacements and sources no longer loaded in the editor. File watching uses VS Code's URI APIs for local and Remote SSH files, preserves unsaved editor changes and stops when the reader closes.
 - Remote SSH workspaces play audio on the client computer: the reader runs as a local UI extension and opens remote documents through VS Code. Selecting a remote Markdown file in the Explorer reads that file even when another editor is active.
 - Reopening the reader after closing its panel works again: it no longer fails with "Webview is disposed". Stopping while a sentence is being loaded no longer plays it anyway.
 - Invalid or rejected replacement Inworld keys keep the previous working key. New keys are checked with the free voice-list request, and accepted keys refresh open panels.

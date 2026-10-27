@@ -15,6 +15,12 @@ function fakeVscode() {
     const listenerErrors = [];
     const errorsShown = [];
     const editorsShown = [];
+    const watchers = [];
+    const documentsByUri = new Map();
+    const openedUris = [];
+    const saveListeners = new Set();
+    const changeListeners = new Set();
+    const openListeners = new Set();
     const fire = (listeners, ...args) => {
         for (const listener of listeners) {
             try {
@@ -95,6 +101,12 @@ function fakeVscode() {
             }
         },
         ThemeIcon: class {},
+        RelativePattern: class {
+            constructor(baseUri, pattern) {
+                this.baseUri = baseUri;
+                this.pattern = pattern;
+            }
+        },
         Uri: { joinPath: (base, ...parts) => ({ fsPath: join(base.fsPath, ...parts) }) },
         window: {
             createWebviewPanel,
@@ -116,11 +128,60 @@ function fakeVscode() {
         workspace: {
             asRelativePath: (uri) => uri.path,
             getConfiguration: () => ({ get: (_key, fallback) => fallback, update: async () => {} }),
-            onDidSaveTextDocument: event(new Set()),
+            fs: { isWritableFileSystem: (scheme) => (scheme === "file" || scheme === "vscode-remote" ? true : undefined) },
+            onDidSaveTextDocument: event(saveListeners),
+            onDidChangeTextDocument: event(changeListeners),
+            onDidOpenTextDocument: event(openListeners),
+            openTextDocument: async (uri) => {
+                openedUris.push(uri);
+                const document = documentsByUri.get(uri.toString());
+                if (!document || document.isClosed) {
+                    throw new Error("Document unavailable");
+                }
+                fire(openListeners, document);
+                return document;
+            },
+            createFileSystemWatcher: (pattern, ignoreCreateEvents = false, ignoreChangeEvents = false, ignoreDeleteEvents = false) => {
+                const changes = new Set();
+                const creates = new Set();
+                const deletes = new Set();
+                const watcher = {
+                    pattern,
+                    ignoreCreateEvents,
+                    ignoreChangeEvents,
+                    ignoreDeleteEvents,
+                    disposed: false,
+                    onDidChange: event(changes),
+                    onDidCreate: event(creates),
+                    onDidDelete: event(deletes),
+                    change: (uri) => fire(changes, uri),
+                    create: (uri) => fire(creates, uri),
+                    dispose() {
+                        this.disposed = true;
+                        changes.clear();
+                        creates.clear();
+                        deletes.clear();
+                    },
+                };
+                watchers.push(watcher);
+                return watcher;
+            },
         },
         commands: { executeCommand: async () => {} },
     };
-    return { vscode, panels, listenerErrors, errorsShown, editorsShown };
+    return {
+        vscode,
+        panels,
+        listenerErrors,
+        errorsShown,
+        editorsShown,
+        watchers,
+        documentsByUri,
+        openedUris,
+        save: (document) => fire(saveListeners, document),
+        change: (document) => fire(changeListeners, { document }),
+        open: (document) => fire(openListeners, document),
+    };
 }
 
 const fake = fakeVscode();
@@ -150,15 +211,238 @@ function setup(fetchImpl) {
     const synthesizer = new Synthesizer(join(dir, "audio"), client, telemetry, () => ({}));
     const player = { play: async () => "ended", pause() {}, resume() {}, stop() {} };
     const path = `/docs/spec-${++documents}.md`;
-    const document = { uri: { path, toString: () => `file://${path}` }, getText: () => "# Title\n\nA first sentence. A second one.\n" };
+    const document = { uri: { scheme: "file", path, toString: () => `file://${path}` }, isDirty: false, isClosed: false, getText: () => "# Title\n\nA first sentence. A second one.\n" };
+    fake.documentsByUri.set(document.uri.toString(), document);
     const context = { extensionUri: { fsPath: dir }, globalState: memento(), workspaceState: memento() };
     return { document, context, deps: { client, player, synthesizer, telemetry } };
 }
 
 const voices = async () => new Response(JSON.stringify({ voices: [{ voiceId: "Jason", displayName: "Jason", description: "", languages: ["en"] }] }), { status: 200 });
 
+const lastRender = (panel) => panel.posted.filter((message) => message.type === "render").at(-1);
+
+test("an external clean-document reload refreshes the preview without synthesizing audio", async () => {
+    const { document, context, deps } = setup((url) => {
+        assert.ok(url.endsWith("/voices"), "refreshing an idle preview must not synthesize");
+        return voices();
+    });
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel);
+        const text = document.getText();
+        document.getText = () => `${text}\nExternally saved addition.`;
+        fake.change(document);
+        assert.ok(lastRender(panel).html.includes("Externally saved addition."));
+        assert.ok(
+            original.units.every((unit) => lastRender(panel).units.some((next) => next.id === unit.id)),
+            "unchanged sentences retain their audio-cache identities",
+        );
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("unsaved edits wait for save, and duplicate clean/save events do not render the same content again", async () => {
+    const { document, context, deps } = setup(voices);
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const watcher = fake.watchers.at(-1);
+    const opened = fake.openedUris.length;
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel);
+        document.isDirty = true;
+        document.getText = () => "An unsaved draft.";
+        fake.change(document);
+        watcher.change(document.uri);
+        await new Promise(setImmediate);
+        assert.equal(lastRender(panel), original, "typing or a disk event must not publish a dirty buffer");
+        assert.deepEqual(fake.openedUris.slice(opened), [], "an open document refreshes through VS Code's reload events");
+        document.isDirty = false;
+        fake.save(document);
+        const saved = lastRender(panel);
+        assert.ok(saved.html.includes("An unsaved draft."));
+        fake.change(document);
+        fake.save(document);
+        assert.equal(lastRender(panel), saved);
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("document and watcher events for another URI leave this preview alone", async () => {
+    const { document, context, deps } = setup(voices);
+    const other = setup(voices).document;
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const watcher = fake.watchers.at(-1);
+    const opened = fake.openedUris.length;
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel);
+        document.isClosed = true;
+        fake.save(other);
+        fake.change(other);
+        fake.open(other);
+        watcher.change(other.uri);
+        watcher.create(other.uri);
+        await new Promise(setImmediate);
+        assert.equal(lastRender(panel), original);
+        assert.deepEqual(fake.openedUris.slice(opened), []);
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("changed or recreated closed SSH files reopen by URI and refresh the preview and source navigation", async () => {
+    const { document, context, deps } = setup(voices);
+    document.uri = {
+        scheme: "vscode-remote",
+        path: "/work/spec [draft].md",
+        toString: () => "vscode-remote://ssh-remote+test-host/work/spec%20%5Bdraft%5D.md",
+        get fsPath() {
+            throw new Error("remote file watching must use VS Code's URI APIs");
+        },
+    };
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const watcher = fake.watchers.at(-1);
+    const opened = fake.openedUris.length;
+    try {
+        await panel.receive({ type: "ready" });
+        assert.equal(watcher.pattern.baseUri, document.uri, "the watcher must retain the remote scheme and authority");
+        let source = document;
+        for (const event of [
+            "change",
+            "create",
+        ]) {
+            source.isClosed = true;
+            source = { ...document, isClosed: false, getText: () => `# Saved ${event}\n\nNew source text.` };
+            fake.documentsByUri.set(document.uri.toString(), source);
+            watcher[event](document.uri);
+            await new Promise(setImmediate);
+            assert.ok(lastRender(panel).html.includes(`Saved ${event}`));
+            await panel.receive({ type: "reveal", line: 2 });
+            assert.equal(fake.editorsShown.at(-1).document, source, "navigation must use the reopened document, not the disposed one");
+        }
+        assert.deepEqual(fake.openedUris.slice(opened), [
+            document.uri,
+            document.uri,
+        ]);
+    } finally {
+        panel.dispose();
+    }
+    assert.equal(watcher.disposed, true);
+});
+
+test("reopening a source with a new TextDocument instance still refreshes on open and save", async () => {
+    const { document, context, deps } = setup(voices);
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        document.isClosed = true;
+        const reopened = { ...document, isClosed: false, getText: () => "Reopened source." };
+        fake.open(reopened);
+        assert.ok(lastRender(panel).html.includes("Reopened source."));
+        reopened.getText = () => "Saved after reopening.";
+        fake.save(reopened);
+        assert.ok(lastRender(panel).html.includes("Saved after reopening."));
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("closing a panel disposes its watcher and drops a pending file reload", async (t) => {
+    const { document, context, deps } = setup(voices);
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const watcher = fake.watchers.at(-1);
+    await panel.receive({ type: "ready" });
+    const original = lastRender(panel);
+    document.isClosed = true;
+    let complete;
+    const opened = [];
+    t.mock.method(fake.vscode.workspace, "openTextDocument", (uri) => {
+        opened.push(uri);
+        return new Promise((resolve) => (complete = resolve));
+    });
+    watcher.change(document.uri);
+    panel.dispose();
+    complete({ ...document, isClosed: false, getText: () => "A late saved result." });
+    await new Promise(setImmediate);
+    watcher.create(document.uri);
+    assert.equal(watcher.disposed, true);
+    assert.equal(lastRender(panel), original);
+    assert.deepEqual(opened, [document.uri], "disposed file events must not reopen the document");
+    assert.deepEqual(fake.listenerErrors, []);
+});
+
+test("a failed closed-source reload can be retried on the next file event", async () => {
+    const { document, context, deps } = setup(voices);
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const watcher = fake.watchers.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel);
+        document.isClosed = true;
+        watcher.change(document.uri);
+        await new Promise(setImmediate);
+        assert.equal(lastRender(panel), original);
+        assert.match(fake.errorsShown.at(-1), /Document unavailable/);
+        fake.documentsByUri.set(document.uri.toString(), { ...document, isClosed: false, getText: () => "Available again." });
+        watcher.create(document.uri);
+        await new Promise(setImmediate);
+        assert.ok(lastRender(panel).html.includes("Available again."));
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("a saved refresh preserves playback when the current sentence still exists", { timeout: 5000 }, async () => {
+    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 }));
+    const { document, context, deps } = setup(fetchImpl);
+    let started;
+    const playing = new Promise((resolve) => (started = resolve));
+    let settle;
+    let stopped = false;
+    deps.player = {
+        play: () => {
+            started();
+            return new Promise((resolve) => (settle = resolve));
+        },
+        stop: () => {
+            stopped = true;
+            settle("stopped");
+        },
+        pause() {},
+        resume() {},
+    };
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel);
+        await panel.receive({ type: "start", id: original.units[0].id });
+        await playing;
+        const text = document.getText();
+        document.getText = () => `${text}\nA saved addition while listening.`;
+        fake.change(document);
+        assert.ok(lastRender(panel).html.includes("A saved addition while listening."));
+        assert.equal(lastRender(panel).units[0].id, original.units[0].id);
+        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "playing");
+        assert.equal(stopped, false);
+    } finally {
+        panel.dispose();
+    }
+});
+
 test("reopening the panel after closing it throws Webview is disposed", async () => {
     const { document, context, deps } = setup(voices);
+    const errors = fake.errorsShown.length;
     const opened = fake.panels.length;
     for (let round = 1; round <= 3; round++) {
         assert.doesNotThrow(() => ReaderPanel.show(context, document, deps), `opening the panel, round ${round}`);
@@ -172,12 +456,13 @@ test("reopening the panel after closing it throws Webview is disposed", async ()
         panel.dispose();
     }
     assert.deepEqual(fake.listenerErrors.map(String), []);
-    assert.deepEqual(fake.errorsShown, []);
+    assert.deepEqual(fake.errorsShown.slice(errors), []);
 });
 
 test("an Inworld reply that arrives after the panel closes is dropped instead of throwing Webview is disposed", async () => {
     let answer;
     const { document, context, deps } = setup(() => new Promise((resolve) => (answer = resolve)));
+    const errors = fake.errorsShown.length;
     ReaderPanel.show(context, document, deps);
     const panel = fake.panels.at(-1);
     const handled = panel.receive({ type: "ready" });
@@ -188,7 +473,7 @@ test("an Inworld reply that arrives after the panel closes is dropped instead of
     answer(await voices());
     await assert.doesNotReject(handled);
     assert.deepEqual(fake.listenerErrors.map(String), []);
-    assert.deepEqual(fake.errorsShown, []);
+    assert.deepEqual(fake.errorsShown.slice(errors), []);
 });
 
 test("accepting a replacement key can reload voices in a panel whose first request was rejected", async () => {

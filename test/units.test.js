@@ -146,6 +146,30 @@ test("inline code is spoken with the symbol words of the chosen language", () =>
     assert.equal(speakCode("B11", "en"), "B 11");
 });
 
+test("snake_case inline code is spoken as separate words without changing its displayed spelling", () => {
+    const identifier = "billings_consumption_daily_usage";
+    for (const language of [
+        "it",
+        "it-IT",
+        "en",
+        "en-US",
+        "fr",
+    ]) {
+        const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
+        assert.deepEqual(
+            units.map((unit) => unit.spoken),
+            [
+                "billings consumption daily usage",
+                "Read billings consumption daily usage.",
+                "Name",
+                "billings consumption daily usage",
+            ],
+        );
+        assert.ok(html.includes(`<code>${identifier}</code>`));
+        assert.equal(speakCode("__billings___consumption_dailyUsage__", language), "billings consumption daily Usage");
+    }
+});
+
 test("editing one sentence leaves the ids of the others unchanged, so their audio stays cached", () => {
     const before = renderDocument(DOC, "en").units.map((u) => u.id);
     const after = renderDocument(DOC.replace("Every change is checkable.", "Every change is reviewed."), "en").units.map((u) => u.id);
@@ -184,6 +208,8 @@ test("Markdown with no spoken words creates no units that could send empty text 
         "![](image.png)",
         "[](https://example.org)",
         "`()`",
+        "`_`",
+        "`___`",
     ]) {
         const { html, units } = renderDocument(source, "en");
         assert.deepEqual(units, [], `unexpected speech unit for ${JSON.stringify(source)}`);

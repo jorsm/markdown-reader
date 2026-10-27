@@ -28,8 +28,8 @@ export interface RenderedDocument {
 
 /** Words spoken for the symbols inside inline code, per language. */
 const SYMBOL_WORDS: Record<string, Record<string, string>> = {
-    en: { "/": "slash", ".": "dot", _: "underscore", "-": "dash", "@": "at", "#": "hash", ":": "colon", "=": "equals" },
-    it: { "/": "barra", ".": "punto", _: "trattino basso", "-": "trattino", "@": "chiocciola", "#": "cancelletto", ":": "due punti", "=": "uguale" },
+    en: { "/": "slash", ".": "dot", "-": "dash", "@": "at", "#": "hash", ":": "colon", "=": "equals" },
+    it: { "/": "barra", ".": "punto", "-": "trattino", "@": "chiocciola", "#": "cancelletto", ":": "due punti", "=": "uguale" },
 };
 
 const ABBREVIATIONS = new Set([
@@ -304,7 +304,7 @@ export function shortHash(input: string, length: number): string {
     return createHash("sha256").update(input).digest("hex").slice(0, length);
 }
 
-/** `src/utils/retry.ts` → "src slash utils slash retry dot ts"; `camelCase` → "camel Case"; `B11` → "B 11". */
+/** Makes inline code speakable: names split at underscores and camel-case boundaries, other symbols use localized words. */
 export function speakCode(code: string, language: string): string {
     const words = SYMBOL_WORDS[language.slice(0, 2)] ?? SYMBOL_WORDS.en!;
     return code
@@ -312,8 +312,8 @@ export function speakCode(code: string, language: string): string {
         .map((token) =>
             token
                 .replace(/\/+$/, "")
-                .replace(/[/._\-@#:=]/g, (s) => ` ${words[s] ?? s} `)
-                .replace(/[(){}[\]<>*?!,;"'`|\\]/g, " ")
+                .replace(/[/.\-@#:=]/g, (s) => ` ${words[s] ?? s} `)
+                .replace(/[_(){}[\]<>*?!,;"'`|\\]/g, " ")
                 .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
                 .replace(/(\p{L})(\p{N})/gu, "$1 $2"),
         )

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
-const { mkdtempSync } = require("node:fs");
+const { mkdtempSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 
@@ -399,6 +399,52 @@ test("a failed closed-source reload can be retried on the next file event", asyn
         assert.ok(lastRender(panel).html.includes("Available again."));
     } finally {
         panel.dispose();
+    }
+});
+
+test("only the active sentence's preparation ends loading, and completing it while paused does not start playback", { timeout: 5000 }, async () => {
+    const { document, context, deps } = setup(voices);
+    document.getText = () => "A first sentence. A second one.";
+    const file = join(context.extensionUri.fsPath, "unit.mp3");
+    writeFileSync(file, "ID3 fake audio");
+    const pending = new Map();
+    deps.synthesizer.ensure = (job) => new Promise((resolve) => pending.set(job.text, resolve));
+    let started;
+    const playing = new Promise((resolve) => (started = resolve));
+    let settle;
+    let hasPlayed = false;
+    deps.player = {
+        play: () => {
+            hasPlayed = true;
+            started();
+            return new Promise((resolve) => (settle = resolve));
+        },
+        stop: () => settle?.("stopped"),
+        pause() {},
+        resume() {},
+    };
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const waiting = () => panel.posted.filter((message) => message.type === "waiting").at(-1).waiting;
+    try {
+        await panel.receive({ type: "ready" });
+        await panel.receive({ type: "start", id: lastRender(panel).units[0].id });
+        assert.equal(waiting(), true, "the current sentence is still being synthesized");
+        pending.get("A second one.")(file);
+        await new Promise(setImmediate);
+        assert.equal(waiting(), true, "prepared lookahead must not clear the current sentence's loading indicator");
+        assert.equal(hasPlayed, false);
+
+        await panel.receive({ type: "pause" });
+        pending.get("A first sentence.")(file);
+        await new Promise(setImmediate);
+        assert.equal(hasPlayed, false, "finishing synthesis while paused must not start audio");
+        await panel.receive({ type: "resume" });
+        await playing;
+        assert.equal(waiting(), false, "loading ends before the prepared sentence plays");
+    } finally {
+        panel.dispose();
+        pending.forEach((resolve) => resolve(file));
     }
 });
 

@@ -504,7 +504,7 @@ export class ReaderPanel {
 /** What every panel shares, built once at activation. */
 export interface Deps {
     client: InworldClient;
-    /** ffplay, when it can play here; otherwise each panel plays through its own audio element. */
+    /** Explicitly selected ffplay, or undefined for each panel's default webview audio. */
     player: AudioOutput | undefined;
     synthesizer: Synthesizer;
     telemetry: Telemetry;

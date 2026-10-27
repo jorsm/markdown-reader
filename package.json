@@ -75,16 +75,16 @@
                 "markdownReader.audioOutput": {
                     "type": "string",
                     "enum": [
-                        "auto",
+                        "webview",
                         "ffplay",
-                        "webview"
+                        "auto"
                     ],
                     "enumDescriptions": [
-                        "The local panel on Windows; local ffplay when available on Linux and macOS, otherwise the panel.",
-                        "Local ffplay (FFmpeg) on Linux and macOS; uses the panel on Windows, where native pause is unavailable.",
-                        "Always the panel's own audio element."
+                        "The local panel's audio element on every platform, with immediate playback speed changes.",
+                        "Optional fallback for silent webview audio: local ffplay (FFmpeg) on Linux and macOS. Windows uses the panel.",
+                        "Same as webview; retained for compatibility with existing settings."
                     ],
-                    "default": "auto",
+                    "default": "webview",
                     "description": "Where audio is played. Reload the window after changing it."
                 },
                 "markdownReader.pricePerMillionCharacters": {

@@ -17,7 +17,7 @@ export interface AudioOutput {
 
 /**
  * Plays through the panel's audio element: the extension sends the bytes, the panel plays them from a
- * Blob URL and reports back when the unit ends or fails. Used where ffplay is not available.
+ * Blob URL and reports back when the unit ends or fails. The default output on every platform.
  */
 export class WebviewOutput implements AudioOutput {
     private token = 0;

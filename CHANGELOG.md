@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- Draft reader: **Read Aloud** in the editor title bar of Markdown files opens a panel beside the editor. Click a sentence to hear the document from there, highlighted as it goes, with Inworld TTS. Speed from 1× to 2.5× (Space, ← →, + −), language, voice and model (Flash or TTS-2) selectors, double-click or `E` to jump to the source line, estimated spend for the session and the month. Audio plays through ffplay (FFmpeg) when it is installed, since some VS Code builds, such as the snap, have no sound in webviews; `markdownReader.audioOutput` chooses. A "Markdown Reader" output channel says which output is used. Speed from 0.75× to 3× with a slider, or `+`/`−` in steps of 0.1. **Markdown Reader: Clear Audio Cache** deletes all cached audio after confirmation.
+- Draft reader: **Read Aloud** in the editor title bar of Markdown files opens a panel beside the editor. Click a sentence to hear the document from there, highlighted as it goes, with Inworld TTS. Speed from 1× to 2.5× (Space, ← →, + −), language, voice and model (Flash or TTS-2) selectors, double-click or `E` to jump to the source line, estimated spend for the session and the month. Audio plays through the panel's webview by default; `markdownReader.audioOutput` can select ffplay (FFmpeg) on Linux and macOS if webview audio is silent. A "Markdown Reader" output channel says which output is used. Speed from 0.75× to 3× with a slider, or `+`/`−` in steps of 0.1. **Markdown Reader: Clear Audio Cache** deletes all cached audio after confirmation.
 
 ### Changed
 
+- Webview audio is now the default on every platform, with immediate speed changes during a sentence. Existing `auto` settings also use the webview; ffplay remains an optional manual fallback on Linux and macOS.
 - The extension's identity and display name now match Markdown Reader (`jorsm.markdown-reader`).
 - The reader toolbar groups playback and voice controls, labels selectors and gives play/pause a clear icon. Compact dropdowns have consistent chevrons and thin borders; play/pause uses the theme's filled primary button style, and `+`/`−` use secondary buttons. It follows the VS Code theme, shows keyboard focus and wraps in narrow editor columns; status and estimated spend use a secondary row.
 - The current speed readout, immediately to the right of `+`, opens presets for 1×, 1.25×, 1.5× and 2×. Slider and button adjustments still show intermediate speeds without adding extra menu choices or controls.

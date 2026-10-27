@@ -26,6 +26,14 @@ Reload the window, run **Markdown Reader: Set API Key**, open a Markdown file an
 
 Install Markdown Reader on your **local computer**, including when you use Remote SSH. When building on an SSH host, download the generated VSIX and install it from a local VS Code window, then reconnect. The extension runs in the local UI extension host: VS Code provides the remote document while Inworld requests, audio caching and playback run on the client. Source-line navigation still opens the remote document.
 
-On Linux and macOS, install FFmpeg/ffplay locally and leave `markdownReader.audioOutput` at `auto`, or choose `ffplay` explicitly. FFmpeg is not bundled. Windows uses the local webview because native pause requires POSIX signals. The `webview` option remains available on every supported client; some VS Code builds, including the tested Linux snap, may have silent webview audio.
+Audio uses the local panel's **webview by default on Windows, Linux and macOS**, without FFmpeg. Speed changes take effect immediately, including during a sentence. Existing `markdownReader.audioOutput: "auto"` settings also select the webview.
+
+If webview audio is silent, Linux and macOS users can install FFmpeg with `ffplay` on the **client computer**, make it available on `PATH`, and select the manual fallback in VS Code settings:
+
+```json
+"markdownReader.audioOutput": "ffplay"
+```
+
+Reload the VS Code window after changing the setting. FFmpeg is not bundled or downloaded automatically. With ffplay, speed changes apply from the next sentence; Windows uses the webview because native pause requires POSIX signals. Some builds, including the Linux snap tested during development, may have silent webview audio. The **Markdown Reader** output channel reports the selected player; if an explicitly selected ffplay cannot run, the reader reports the problem and uses the webview.
 
 An old remote installation's audio cache and spend history are not copied to the local computer. This extension requires desktop VS Code; browser-only VS Code has no local Node.js host for ffplay.

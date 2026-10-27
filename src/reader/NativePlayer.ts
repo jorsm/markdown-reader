@@ -2,9 +2,8 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import type { AudioOutput, PlayResult } from "./AudioOutput";
 
 /**
- * Plays audio files with ffplay from the extension host. VS Code's webview can't be relied on for
- * sound: the snap build's Chromium has no PulseAudio/PipeWire output, so audio "plays" in silence.
- * Speed uses ffmpeg's atempo filter, which keeps the pitch.
+ * Optional native playback for VS Code builds whose webview audio is silent.
+ * Runs ffplay in the local extension host, with ffmpeg's atempo filter to keep the pitch.
  */
 export class NativePlayer implements AudioOutput {
     private process: ChildProcess | undefined;

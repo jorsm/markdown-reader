@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- The play/pause button shows a small themed spinner while the current sentence's audio is being prepared. It remains usable to pause and respects reduced-motion preferences.
 - Draft reader: **Read Aloud** in the editor title bar of Markdown files opens a panel beside the editor. Click a sentence to hear the document from there, highlighted as it goes, with Inworld TTS. Speed from 1× to 2.5× (Space, ← →, + −), language, voice and model (Flash or TTS-2) selectors, double-click or `E` to jump to the source line, estimated spend for the session and the month. Audio plays through the panel's webview by default; `markdownReader.audioOutput` can select ffplay (FFmpeg) on Linux and macOS if webview audio is silent. A "Markdown Reader" output channel says which output is used. Speed from 0.75× to 3× with a slider, or `+`/`−` in steps of 0.1. **Markdown Reader: Clear Audio Cache** deletes all cached audio after confirmation.
 
 ### Changed

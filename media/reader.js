@@ -23,6 +23,7 @@
     let units = [];
     let currentId;
     let state = "stopped";
+    let waiting = false;
     let audioToken = 0;
     let audioUrl;
 
@@ -35,13 +36,21 @@
 
     function setState(next) {
         state = next;
+        if (state === "stopped") {
+            waiting = false;
+        }
+        showPlayback();
+    }
+
+    function showPlayback() {
+        const loading = state === "playing" && waiting;
         const action = state === "playing" ? "Pause" : state === "paused" ? "Resume" : "Play";
         playButton.dataset.state = state;
-        playButton.setAttribute("aria-label", action);
-        playButton.title = `${action} (Space)`;
-        if (state === "stopped") {
-            status("");
-        }
+        playButton.dataset.loading = String(loading);
+        playButton.setAttribute("aria-busy", String(loading));
+        playButton.setAttribute("aria-label", loading ? "Pause (preparing audio)" : action);
+        playButton.title = loading ? "Preparing audio… Click or press Space to pause" : `${action} (Space)`;
+        status(loading ? "Preparing audio…" : "");
     }
 
     function setRate() {
@@ -243,7 +252,8 @@
                 highlight();
                 break;
             case "waiting":
-                status("Preparing audio…");
+                waiting = data.waiting;
+                showPlayback();
                 break;
             case "state":
                 setState(data.state);

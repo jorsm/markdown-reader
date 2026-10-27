@@ -314,7 +314,7 @@ export class ReaderPanel {
                 const cached = this.scheduler.isReady(unit.id);
                 const waitStart = performance.now();
                 if (!cached) {
-                    void this.post({ type: "waiting" });
+                    void this.post({ type: "waiting", waiting: true });
                 }
                 const file = await this.scheduler.ready(unit.id);
                 if (!(await exists(file))) {
@@ -326,6 +326,7 @@ export class ReaderPanel {
                 if (session !== this.session) {
                     return;
                 }
+                void this.post({ type: "waiting", waiting: false });
                 if (played === 0) {
                     this.deps.telemetry.record({ type: "play_start", ms: Math.round(performance.now() - clickedAt), cacheHit: cached, speed: this.speed });
                 } else if (!cached) {
@@ -461,9 +462,10 @@ export class ReaderPanel {
 <header id="toolbar" class="toolbar" aria-label="Reader controls">
   <div class="toolbar-controls">
     <div class="playback-controls">
-      <button id="play" class="play-button" type="button" title="Play (Space)" aria-label="Play" data-state="stopped">
+      <button id="play" class="play-button" type="button" title="Play (Space)" aria-label="Play" aria-busy="false" data-state="stopped" data-loading="false">
         <svg class="play-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 2.5v11L13 8z"/></svg>
         <svg class="pause-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 2h4v12H3zm6 0h4v12H9z"/></svg>
+        <span class="loading-icon" aria-hidden="true"></span>
       </button>
       <div class="speed-control">
         <label class="control-label" for="speedSlider">Speed</label>

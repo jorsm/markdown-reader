@@ -139,6 +139,37 @@ body.vscode-high-contrast {
     display: block;
 }
 
+.loading-icon {
+    display: none;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+}
+
+.play-button[data-loading="true"] .play-icon,
+.play-button[data-loading="true"] .pause-icon {
+    display: none;
+}
+
+.play-button[data-loading="true"] .loading-icon {
+    display: block;
+    animation: loading-spin 0.8s linear infinite;
+}
+
+@keyframes loading-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .play-button[data-loading="true"] .loading-icon {
+        animation: none;
+    }
+}
+
 .toolbar select {
     appearance: none;
     display: block;

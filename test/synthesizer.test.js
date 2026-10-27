@@ -6,6 +6,7 @@ const { tmpdir } = require("node:os");
 const { Telemetry } = require("../out/telemetry/Telemetry.js");
 const { InworldClient } = require("../out/tts/InworldClient.js");
 const { Synthesizer } = require("../out/reader/Synthesizer.js");
+const { renderDocument } = require("../out/text/units.js");
 
 const MARKER = "zebra-marker-7f3a";
 const KEY = "c2VjcmV0LWtleS1mb3ItdGVzdHM=";
@@ -65,6 +66,24 @@ test("a different voice is a different cache entry", async () => {
     await synthesizer.ensure({ ...job, voiceId: "Beatrice" });
     await synthesizer.ensure(job);
     assert.equal(calls.length, 2);
+});
+
+test("snake_case speech bypasses cached symbol-word audio and caches the corrected narration", async () => {
+    const { calls, synthesizer, job } = setup();
+    const previousText = "billings trattino basso consumption trattino basso daily trattino basso usage";
+    const previousFile = await synthesizer.ensure({ ...job, language: "it", text: previousText });
+    const [unit] = renderDocument("`billings_consumption_daily_usage`", "it").units;
+    const correctedJob = { ...job, language: "it", text: unit.spoken };
+    const correctedFile = await synthesizer.ensure(correctedJob);
+    assert.notEqual(correctedFile, previousFile);
+    assert.equal(await synthesizer.ensure(correctedJob), correctedFile);
+    assert.deepEqual(
+        calls.map((call) => call.body.text),
+        [
+            previousText,
+            "billings consumption daily usage",
+        ],
+    );
 });
 
 test("preceding text goes to Inworld as unspoken synthesis context, not as text to speak", async () => {

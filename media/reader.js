@@ -195,14 +195,17 @@
 
     window.addEventListener("message", ({ data }) => {
         switch (data.type) {
-            case "render":
+            case "render": {
                 setSpeed(data.speed, false);
                 doc.innerHTML = data.html;
-                const previous = units[indexOf(currentId)];
+                const index = indexOf(currentId);
+                const previous = units[index];
                 units = data.units;
                 if (previous && indexOf(currentId) < 0) {
-                    // The current sentence was edited: Play and the arrows continue from the same place.
-                    currentId = (units.find((u) => u.line >= previous.line) ?? units.at(-1))?.id;
+                    // The current sentence was edited: Play and the arrows continue from its replacement, by
+                    // position, or by line when sentences before it changed (ReaderPanel.relocate does the same).
+                    const candidate = units[index];
+                    currentId = (candidate && candidate.line >= previous.line ? candidate : (units.find((u) => u.line >= previous.line) ?? units.at(-1)))?.id;
                 }
                 highlight();
                 fillSelect(
@@ -233,6 +236,7 @@
                 );
                 showSpend(data.spend);
                 break;
+            }
             case "voices":
                 fillSelect(
                     voiceSelect,

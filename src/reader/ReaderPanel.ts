@@ -85,7 +85,7 @@ export class ReaderPanel {
         await Promise.all(
             [...ReaderPanel.panels.values()].map((panel) => {
                 panel.voices = undefined;
-                return panel.choose(panel.choice);
+                return panel.choose();
             }),
         );
     }
@@ -167,7 +167,7 @@ export class ReaderPanel {
             case "ready":
                 this.resetPlayback();
                 this.render();
-                await this.choose(this.choice);
+                await this.choose();
                 break;
             case "start":
                 void this.playFrom(String(message.id));
@@ -259,10 +259,12 @@ export class ReaderPanel {
     /**
      * Applies a language and voice choice, also on load and after the voice list reloads: a stored voice the
      * language doesn't offer is replaced. Prepared audio is dropped and the choice remembered only when it changed.
+     * Without `next`, the current choice is read after the voices load, so a choice made meanwhile is kept.
      */
-    private async choose(next: Choice): Promise<void> {
+    private async choose(next?: Choice): Promise<void> {
         const loaded = await this.loadVoices();
-        const choice = { language: next.language, voice: this.pickVoice(next.language, next.voice) };
+        const wanted = next ?? this.choice;
+        const choice = { language: wanted.language, voice: this.pickVoice(wanted.language, wanted.voice) };
         const languageChanged = choice.language !== this.choice.language;
         if (languageChanged || choice.voice !== this.choice.voice) {
             this.resetPlayback();
@@ -336,7 +338,7 @@ export class ReaderPanel {
                 });
                 if (file === undefined) {
                     // A save removed this sentence while it was being prepared: continue from the same place.
-                    unit = this.units.find((u) => u.line >= waiting.line);
+                    unit = this.relocate(waiting, 0);
                     continue;
                 }
                 if (!(await exists(file))) {
@@ -360,9 +362,8 @@ export class ReaderPanel {
                 played++;
                 await new Promise((resolve) => setTimeout(resolve, (PAUSE_MS[unit!.kind] ?? 250) / this.speed));
                 await this.whilePaused(session);
-                const line = unit.line;
                 const current = this.byId.get(unit.id);
-                unit = current ? this.units[current.index + 1] : this.units.find((u) => u.line > line);
+                unit = current ? this.units[current.index + 1] : this.relocate(unit, 1);
             }
             if (session === this.session) {
                 ReaderPanel.playback.release(this);
@@ -378,6 +379,19 @@ export class ReaderPanel {
                 this.deps.telemetry.record({ type: "session_end", unitsPlayed: played, stalls, speed: this.speed });
             }
         }
+    }
+
+    /**
+     * Where playback goes when a save removed `unit`: its replacement (`offset` 0) or the unit after it (1).
+     * Sentences of one paragraph share a line, so the position comes first; the line catches inserted or removed sentences before it.
+     * media/reader.js applies the same rule to its play position.
+     */
+    private relocate(unit: Unit, offset: 0 | 1): Unit | undefined {
+        const candidate = this.units[unit.index + offset];
+        if (candidate && candidate.line >= unit.line) {
+            return candidate;
+        }
+        return this.units.find((u) => u.line > unit.line || (offset === 0 && u.line === unit.line));
     }
 
     /** Ends any playback sequence and starts a new session in the playing state. */

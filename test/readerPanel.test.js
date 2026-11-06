@@ -443,37 +443,88 @@ test("a saved refresh preserves playback when the current sentence still exists"
     }
 });
 
-test("a save that removes the queued current sentence continues from its place instead of leaving the panel playing forever", { timeout: 5000 }, async () => {
+test("a save that edits the queued sentence mid-paragraph plays its new text instead of restarting the paragraph or hanging", { timeout: 5000 }, async () => {
     const pending = [];
     let released = false;
     const { document, context, deps } = setup((url) => (url.endsWith("/voices") ? voices() : released ? synthesized() : new Promise((resolve) => pending.push(() => resolve(synthesized())))));
-    document.getText = () => "# Title\n\nOne. Two. Three. Four.\n";
+    document.getText = () => "# Title\n\nOne. Two. Three. Four. Five.\n";
     const errors = fake.errorsShown.length;
     ReaderPanel.show(context, document, deps);
     const panel = fake.panels.at(-1);
+    const played = () => panel.posted.filter((message) => message.type === "playing").map((message) => message.id);
     try {
         await panel.receive({ type: "ready" });
-        const [
-            title,
-            one,
-        ] = lastRender(panel).units;
-        // Starting at "One" fills every synthesis slot, so clicking the title leaves it queued.
-        await panel.receive({ type: "start", id: one.id });
-        await panel.receive({ type: "start", id: title.id });
-        document.getText = () => "# Heading\n\nOne. Two. Three. Four.\n";
+        const original = lastRender(panel).units;
+        // Starting at "Three" fills every synthesis slot, so clicking "Two" leaves it queued.
+        await panel.receive({ type: "start", id: original[3].id });
+        await panel.receive({ type: "start", id: original[2].id });
+        document.getText = () => "# Title\n\nOne. Deux. Three. Four. Five.\n";
         fake.change(document);
-        const heading = lastRender(panel).units[0];
-        assert.notEqual(heading.id, title.id);
+        const edited = lastRender(panel).units[2];
+        assert.notEqual(edited.id, original[2].id);
+        const before = played().length;
         released = true;
         while (pending.length) {
             pending.shift()();
         }
-        for (let i = 0; i < 200 && !panel.posted.some((message) => message.type === "playing" && message.id === heading.id); i++) {
+        for (let i = 0; i < 200 && !played().includes(edited.id); i++) {
             await new Promise((resolve) => setTimeout(resolve, 5));
         }
-        assert.ok(panel.posted.some((message) => message.type === "playing" && message.id === heading.id));
+        assert.equal(played()[before], edited.id);
         assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "playing");
         assert.deepEqual(fake.errorsShown.slice(errors), []);
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("editing the sentence being played continues with the next sentence of its paragraph, not the next paragraph", { timeout: 5000 }, async () => {
+    const { document, context, deps } = setup(async (url) => (url.endsWith("/voices") ? voices() : synthesized()));
+    document.getText = () => "# Title\n\nOne. Two. Three.\n\nNext paragraph.\n";
+    const settles = [];
+    deps.player = { play: () => new Promise((resolve) => settles.push(resolve)), stop: () => settles.splice(0).forEach((settle) => settle("stopped")), pause() {}, resume() {} };
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const played = () => panel.posted.filter((message) => message.type === "playing").map((message) => message.id);
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel).units;
+        await panel.receive({ type: "start", id: original[2].id });
+        while (!settles.length) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        document.getText = () => "# Title\n\nOne. Deux. Three.\n\nNext paragraph.\n";
+        fake.change(document);
+        settles.shift()("ended");
+        for (let i = 0; i < 200 && played().length < 2; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        assert.deepEqual(played(), [
+            original[2].id,
+            original[3].id,
+        ]);
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("a language chosen while the voice list loads is kept when the list arrives", async () => {
+    const answers = [];
+    const { document, context, deps } = setup(() => new Promise((resolve) => answers.push(resolve)));
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        const ready = panel.receive({ type: "ready" });
+        const chosen = panel.receive({ type: "choose", language: "it", voice: "" });
+        while (answers.length < 2) {
+            await new Promise(setImmediate);
+        }
+        answers.pop()(await voices());
+        await chosen;
+        answers.pop()(await voices());
+        await ready;
+        assert.equal(context.workspaceState.get(`markdownReader.choice:${document.uri.toString()}`).language, "it");
+        assert.equal(lastRender(panel).choice.language, "it");
     } finally {
         panel.dispose();
     }

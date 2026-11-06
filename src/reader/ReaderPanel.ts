@@ -222,7 +222,12 @@ export class ReaderPanel {
         if (!(await this.loadVoices())) {
             return;
         }
-        this.choice = { ...this.choice, voice: this.pickVoice(this.choice.language, this.choice.voice) };
+        const voice = this.pickVoice(this.choice.language, this.choice.voice);
+        if (voice !== this.choice.voice) {
+            // The stored voice doesn't speak this language: drop audio prepared with it and remember the replacement.
+            this.resetPlayback();
+            await this.saveChoice({ ...this.choice, voice });
+        }
         const voices = this.voicesFor(this.choice.language).map(({ voiceId, displayName, description }) => ({ voiceId, displayName, description }));
         await this.post({ type: "voices", choice: this.choice, voices });
     }
@@ -250,23 +255,31 @@ export class ReaderPanel {
         return (available.find((v) => v.voiceId === wanted) ?? available.find((v) => v.voiceId === DEFAULT_VOICES[language]) ?? available[0]!).voiceId;
     }
 
-    /** Updates the global model preference and resets this panel; other open panels keep their prepared audio. */
+    /**
+     * Updates the model preference and resets this panel; other open panels keep their prepared audio.
+     * A workspace value would override a global one, so the choice is written where it takes effect.
+     */
     private async chooseModel(value: string): Promise<void> {
         this.resetPlayback();
-        await config().update("model", value, vscode.ConfigurationTarget.Global);
+        const target = config().inspect("model")?.workspaceValue === undefined ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace;
+        await config().update("model", value, target);
     }
 
     private async choose(next: Choice): Promise<void> {
         const languageChanged = next.language !== this.choice.language;
         await this.loadVoices();
-        this.choice = { language: next.language, voice: this.pickVoice(next.language, next.voice) };
         this.resetPlayback();
-        await this.context.workspaceState.update(choiceKey(this.document), this.choice);
-        await this.context.globalState.update("markdownReader.lastChoice", this.choice);
+        await this.saveChoice({ language: next.language, voice: this.pickVoice(next.language, next.voice) });
         if (languageChanged) {
             this.render();
         }
         await this.sendVoices();
+    }
+
+    private async saveChoice(choice: Choice): Promise<void> {
+        this.choice = choice;
+        await this.context.workspaceState.update(choiceKey(this.document), choice);
+        await this.context.globalState.update("markdownReader.lastChoice", choice);
     }
 
     /** Synthesizes one unit (or takes it from the cache) for the scheduler. */
@@ -347,8 +360,11 @@ export class ReaderPanel {
                 this.setState("stopped");
             }
         } catch (error) {
-            if (session === this.session && !(error instanceof NotWantedError)) {
-                this.notifyError(error);
+            if (session === this.session) {
+                // Resets end the session first, so a current-session NotWantedError means a save removed the queued unit.
+                if (!(error instanceof NotWantedError)) {
+                    this.notifyError(error);
+                }
                 this.stopPlayback();
             }
         } finally {

@@ -80,7 +80,7 @@ function fakeVscode() {
     };
     const vscode = {
         ViewColumn: { One: 1, Beside: -2 },
-        ConfigurationTarget: { Global: 1 },
+        ConfigurationTarget: { Global: 1, Workspace: 2 },
         TextEditorRevealType: { InCenter: 0 },
         Position: class {
             constructor(line, character) {
@@ -127,7 +127,7 @@ function fakeVscode() {
         },
         workspace: {
             asRelativePath: (uri) => uri.path,
-            getConfiguration: () => ({ get: (_key, fallback) => fallback, update: async () => {} }),
+            getConfiguration: () => ({ get: (_key, fallback) => fallback, inspect: () => undefined, update: async () => {} }),
             fs: { isWritableFileSystem: (scheme) => (scheme === "file" || scheme === "vscode-remote" ? true : undefined) },
             onDidSaveTextDocument: event(saveListeners),
             onDidChangeTextDocument: event(changeListeners),
@@ -436,6 +436,84 @@ test("a saved refresh preserves playback when the current sentence still exists"
         assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "playing");
         assert.equal(stopped, false);
     } finally {
+        panel.dispose();
+    }
+});
+
+test("a save that removes the queued current sentence stops playback instead of leaving the panel playing forever", { timeout: 5000 }, async () => {
+    const pending = [];
+    let released = false;
+    const audio = () => new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 4 } }), { status: 200 });
+    const { document, context, deps } = setup((url) => (url.endsWith("/voices") ? voices() : released ? audio() : new Promise((resolve) => pending.push(() => resolve(audio())))));
+    document.getText = () => "# Title\n\nOne. Two. Three. Four.\n";
+    const errors = fake.errorsShown.length;
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const lastState = () => panel.posted.filter((message) => message.type === "state").at(-1).state;
+    try {
+        await panel.receive({ type: "ready" });
+        const [
+            title,
+            one,
+        ] = lastRender(panel).units;
+        // Starting at "One" fills every synthesis slot, so clicking the title leaves it queued.
+        await panel.receive({ type: "start", id: one.id });
+        await panel.receive({ type: "start", id: title.id });
+        document.getText = () => "# Heading\n\nOne. Two. Three. Four.\n";
+        fake.change(document);
+        assert.ok(!lastRender(panel).units.some((unit) => unit.id === title.id));
+        released = true;
+        while (pending.length) {
+            pending.shift()();
+        }
+        for (let i = 0; i < 200 && lastState() !== "stopped"; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        assert.equal(lastState(), "stopped");
+        assert.deepEqual(fake.errorsShown.slice(errors), []);
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("a stored voice that the language doesn't offer is replaced and remembered once voices load", async () => {
+    const { document, context, deps } = setup(voices);
+    await context.workspaceState.update(`markdownReader.choice:${document.uri.toString()}`, { language: "en", voice: "Retired" });
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        assert.equal(panel.posted.find((message) => message.type === "voices").choice.voice, "Jason");
+        assert.deepEqual(context.workspaceState.get(`markdownReader.choice:${document.uri.toString()}`), { language: "en", voice: "Jason" });
+        assert.deepEqual(context.globalState.get("markdownReader.lastChoice"), { language: "en", voice: "Jason" });
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("choosing a model in a workspace that sets one writes the workspace setting, so the choice takes effect", async () => {
+    const { document, context, deps } = setup(voices);
+    const updates = [];
+    const getConfiguration = fake.vscode.workspace.getConfiguration;
+    const configuration = (workspaceValue) => () => ({
+        get: (_key, fallback) => fallback,
+        inspect: () => ({ workspaceValue }),
+        update: async (key, value, target) => void updates.push({ key, value, target }),
+    });
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        fake.vscode.workspace.getConfiguration = configuration("inworld-tts-2");
+        await panel.receive({ type: "model", value: "inworld-tts-2-flash" });
+        fake.vscode.workspace.getConfiguration = configuration(undefined);
+        await panel.receive({ type: "model", value: "inworld-tts-2" });
+        assert.deepEqual(updates, [
+            { key: "model", value: "inworld-tts-2-flash", target: fake.vscode.ConfigurationTarget.Workspace },
+            { key: "model", value: "inworld-tts-2", target: fake.vscode.ConfigurationTarget.Global },
+        ]);
+    } finally {
+        fake.vscode.workspace.getConfiguration = getConfiguration;
         panel.dispose();
     }
 });

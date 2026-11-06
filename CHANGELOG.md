@@ -28,6 +28,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Truncated synthesis responses and empty audio are rejected before caching, allowing the sentence to be retried.
 - Pausing while webview audio loads prevents it from starting until playback is resumed.
 - Windows uses webview playback rather than selecting ffplay, whose native pause controls require POSIX signals.
+- Playback no longer hangs in the playing state when a save removes the sentence about to play, or when the panel's audio fails to decode after it started. A failed resume can no longer stop the next sentence.
+- Play and the arrow keys continue from the same place after the current sentence is edited and saved.
+- Shortcuts with Ctrl, Cmd or Alt (such as VS Code's zoom) no longer also change the reader's speed or playback.
+- A stored voice that the language doesn't offer is replaced and remembered once voices load, and audio prepared with it is dropped.
+- Choosing a model in a workspace that sets `markdownReader.model` updates the workspace setting, so the choice takes effect.
+- If the reader fails to start, the next command tries again instead of repeating the old error until the window reloads.
 - Concurrent requests for identical audio share one synthesis in a window; independent windows use separate temporary cache files.
 - Starting playback in another reader stops the previous panel and updates its controls. Opening or closing an idle panel leaves playback running.
 - Spend history is appended to dated files per window, so windows cannot overwrite each other's totals; existing history is preserved.

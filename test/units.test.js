@@ -191,8 +191,16 @@ test("kebab-case inline code is spoken as separate words without dash or trattin
         );
         assert.ok(html.includes(`<code>${identifier}</code>`));
         assert.equal(speakCode("--no-verify", language), "no verify");
-        assert.equal(speakCode("--", language), "");
     }
+});
+
+test("minus signs, ranges and hyphen operators in inline code still say their hyphen, so values are not misheard", () => {
+    assert.equal(speakCode("-1", "it"), "trattino 1");
+    assert.equal(speakCode("1-10", "en"), "1 dash 10");
+    assert.equal(speakCode("a - b", "en"), "a dash b");
+    assert.equal(speakCode("i--", "en"), "i dash dash");
+    assert.equal(speakCode("e-5", "en"), "e dash 5");
+    assert.equal(speakCode("2026-11-06", "en"), "2026 dash 11 dash 06");
 });
 
 test("editing one sentence leaves the ids of the others unchanged, so their audio stays cached", () => {

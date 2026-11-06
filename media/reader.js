@@ -155,7 +155,8 @@
     modelSelect.addEventListener("change", () => post({ type: "model", value: modelSelect.value }));
 
     document.addEventListener("keydown", (event) => {
-        if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) {
+        // Modified keys belong to VS Code (Ctrl+= zooms, Ctrl+E opens files); Shift stays, "+" needs it on many layouts.
+        if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey) {
             return;
         }
         const i = indexOf(currentId);
@@ -177,6 +178,8 @@
 
     // Audio element output: used only when the extension sends `play`.
     audio.addEventListener("ended", () => post({ type: "ended", token: audioToken }));
+    // A load or decode failure never fires `ended`: report it, or the extension waits for this unit forever.
+    audio.addEventListener("error", () => post({ type: "playError", token: audioToken, message: audio.error?.message || "the audio could not be decoded" }));
     function playAudio(token, data, paused) {
         if (audioUrl) {
             URL.revokeObjectURL(audioUrl);
@@ -192,10 +195,18 @@
 
     window.addEventListener("message", ({ data }) => {
         switch (data.type) {
-            case "render":
+            case "render": {
                 setSpeed(data.speed, false);
                 doc.innerHTML = data.html;
+                const index = indexOf(currentId);
+                const previous = units[index];
                 units = data.units;
+                if (previous && indexOf(currentId) < 0) {
+                    // The current sentence was edited: Play and the arrows continue from its replacement, by
+                    // position, or by line when sentences before it changed (ReaderPanel.relocate does the same).
+                    const candidate = units[index];
+                    currentId = (candidate && candidate.line >= previous.line ? candidate : (units.find((u) => u.line >= previous.line) ?? units.at(-1)))?.id;
+                }
                 highlight();
                 fillSelect(
                     languageSelect,
@@ -225,6 +236,7 @@
                 );
                 showSpend(data.spend);
                 break;
+            }
             case "voices":
                 fillSelect(
                     voiceSelect,
@@ -257,9 +269,11 @@
             case "pauseAudio":
                 audio.pause();
                 break;
-            case "resumeAudio":
-                audio.play().catch((error) => post({ type: "playError", token: audioToken, message: error.message }));
+            case "resumeAudio": {
+                const token = audioToken;
+                audio.play().catch((error) => post({ type: "playError", token, message: error.message }));
                 break;
+            }
             case "stopAudio":
                 audioToken = 0;
                 audio.pause();

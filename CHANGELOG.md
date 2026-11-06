@@ -19,7 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- Inline code identifiers such as `billings_consumption_daily_usage` are read as separate words, without saying "underscore" or "trattino basso". Their displayed spelling is unchanged, and cached audio with the old pronunciation is not reused.
+- Inline code identifiers such as `billings_consumption_daily_usage` are read as separate words, without saying "underscore" or "trattino basso".
+- Hyphens in inline code, as in `markdown-reader`, separate words like underscores instead of being read as "dash" or "trattino". Their displayed spelling is unchanged, and cached audio with the old pronunciation is not reused.
 - Reader previews refresh after saved changes from external programs, including atomic file replacements and sources no longer loaded in the editor. File watching uses VS Code's URI APIs for local and Remote SSH files, preserves unsaved editor changes and stops when the reader closes.
 - Remote SSH workspaces play audio on the client computer: the reader runs as a local UI extension and opens remote documents through VS Code. Selecting a remote Markdown file in the Explorer reads that file even when another editor is active.
 - Reopening the reader after closing its panel works again: it no longer fails with "Webview is disposed". Stopping while a sentence is being loaded no longer plays it anyway.

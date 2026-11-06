@@ -170,6 +170,31 @@ test("snake_case inline code is spoken as separate words without changing its di
     }
 });
 
+test("kebab-case inline code is spoken as separate words without dash or trattino, keeping its displayed spelling", () => {
+    const identifier = "markdown-reader-panel";
+    for (const language of [
+        "it",
+        "it-IT",
+        "en",
+        "en-US",
+        "fr",
+    ]) {
+        const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
+        assert.deepEqual(
+            units.map((unit) => unit.spoken),
+            [
+                "markdown reader panel",
+                "Read markdown reader panel.",
+                "Name",
+                "markdown reader panel",
+            ],
+        );
+        assert.ok(html.includes(`<code>${identifier}</code>`));
+        assert.equal(speakCode("--no-verify", language), "no verify");
+        assert.equal(speakCode("--", language), "");
+    }
+});
+
 test("editing one sentence leaves the ids of the others unchanged, so their audio stays cached", () => {
     const before = renderDocument(DOC, "en").units.map((u) => u.id);
     const after = renderDocument(DOC.replace("Every change is checkable.", "Every change is reviewed."), "en").units.map((u) => u.id);

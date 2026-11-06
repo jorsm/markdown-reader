@@ -146,51 +146,46 @@ test("inline code is spoken with the symbol words of the chosen language", () =>
     assert.equal(speakCode("B11", "en"), "B 11");
 });
 
-test("snake_case inline code is spoken as separate words without changing its displayed spelling", () => {
-    const identifier = "billings_consumption_daily_usage";
-    for (const language of [
-        "it",
-        "it-IT",
-        "en",
-        "en-US",
-        "fr",
-    ]) {
-        const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
-        assert.deepEqual(
-            units.map((unit) => unit.spoken),
-            [
-                "billings consumption daily usage",
-                "Read billings consumption daily usage.",
-                "Name",
-                "billings consumption daily usage",
+test("snake_case and kebab-case inline code is spoken as separate words without naming the separator, keeping its displayed spelling", () => {
+    const cases = [
+        {
+            identifier: "billings_consumption_daily_usage",
+            spoken: "billings consumption daily usage",
+            edge: [
+                "__billings___consumption_dailyUsage__",
+                "billings consumption daily Usage",
             ],
-        );
-        assert.ok(html.includes(`<code>${identifier}</code>`));
-        assert.equal(speakCode("__billings___consumption_dailyUsage__", language), "billings consumption daily Usage");
-    }
-});
-
-test("kebab-case inline code is spoken as separate words without dash or trattino, keeping its displayed spelling", () => {
-    const identifier = "markdown-reader-panel";
-    for (const language of [
-        "it",
-        "it-IT",
-        "en",
-        "en-US",
-        "fr",
-    ]) {
-        const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
-        assert.deepEqual(
-            units.map((unit) => unit.spoken),
-            [
-                "markdown reader panel",
-                "Read markdown reader panel.",
-                "Name",
-                "markdown reader panel",
+        },
+        {
+            identifier: "markdown-reader-panel",
+            spoken: "markdown reader panel",
+            edge: [
+                "--no-verify",
+                "no verify",
             ],
-        );
-        assert.ok(html.includes(`<code>${identifier}</code>`));
-        assert.equal(speakCode("--no-verify", language), "no verify");
+        },
+    ];
+    for (const { identifier, spoken, edge } of cases) {
+        for (const language of [
+            "it",
+            "it-IT",
+            "en",
+            "en-US",
+            "fr",
+        ]) {
+            const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
+            assert.deepEqual(
+                units.map((unit) => unit.spoken),
+                [
+                    spoken,
+                    `Read ${spoken}.`,
+                    "Name",
+                    spoken,
+                ],
+            );
+            assert.ok(html.includes(`<code>${identifier}</code>`));
+            assert.equal(speakCode(edge[0], language), edge[1]);
+        }
     }
 });
 

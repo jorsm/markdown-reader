@@ -304,7 +304,7 @@ export function shortHash(input: string, length: number): string {
     return createHash("sha256").update(input).digest("hex").slice(0, length);
 }
 
-/** Makes inline code speakable: names split at underscores, word-joining hyphens and camel-case boundaries, other symbols use localized words. */
+/** Makes inline code speakable: names split at underscores, hyphens before a letter and camel-case boundaries, other symbols use localized words. */
 export function speakCode(code: string, language: string): string {
     const words = SYMBOL_WORDS[language.slice(0, 2)] ?? SYMBOL_WORDS.en!;
     return code
@@ -312,8 +312,8 @@ export function speakCode(code: string, language: string): string {
         .map((token) =>
             token
                 .replace(/\/+$/, "")
-                // Hyphens that join words (`kebab-case`) or start a flag (`--no-verify`) are separators; minus signs, ranges and operators keep their word.
-                .replace(/(?<=[\p{L}\p{N}])-(?=\p{L})|(?<![\p{L}\p{N}-])-+(?=\p{L})/gu, " ")
+                // Hyphens before a letter (`kebab-case`, `--no-verify`) separate words; minus signs, ranges and operators keep their word.
+                .replace(/-+(?=\p{L})/gu, " ")
                 .replace(/[/.\-@#:=]/g, (s) => ` ${words[s] ?? s} `)
                 .replace(/[_(){}[\]<>*?!,;"'`|\\]/g, " ")
                 .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")

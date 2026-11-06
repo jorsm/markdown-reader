@@ -146,28 +146,56 @@ test("inline code is spoken with the symbol words of the chosen language", () =>
     assert.equal(speakCode("B11", "en"), "B 11");
 });
 
-test("snake_case inline code is spoken as separate words without changing its displayed spelling", () => {
-    const identifier = "billings_consumption_daily_usage";
-    for (const language of [
-        "it",
-        "it-IT",
-        "en",
-        "en-US",
-        "fr",
-    ]) {
-        const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
-        assert.deepEqual(
-            units.map((unit) => unit.spoken),
-            [
-                "billings consumption daily usage",
-                "Read billings consumption daily usage.",
-                "Name",
-                "billings consumption daily usage",
+test("snake_case and kebab-case inline code is spoken as separate words without naming the separator, keeping its displayed spelling", () => {
+    const cases = [
+        {
+            identifier: "billings_consumption_daily_usage",
+            spoken: "billings consumption daily usage",
+            edge: [
+                "__billings___consumption_dailyUsage__",
+                "billings consumption daily Usage",
             ],
-        );
-        assert.ok(html.includes(`<code>${identifier}</code>`));
-        assert.equal(speakCode("__billings___consumption_dailyUsage__", language), "billings consumption daily Usage");
+        },
+        {
+            identifier: "markdown-reader-panel",
+            spoken: "markdown reader panel",
+            edge: [
+                "--no-verify",
+                "no verify",
+            ],
+        },
+    ];
+    for (const { identifier, spoken, edge } of cases) {
+        for (const language of [
+            "it",
+            "it-IT",
+            "en",
+            "en-US",
+            "fr",
+        ]) {
+            const { html, units } = renderDocument(`# \`${identifier}\`\n\nRead \`${identifier}\`.\n\n| Name |\n| --- |\n| \`${identifier}\` |`, language);
+            assert.deepEqual(
+                units.map((unit) => unit.spoken),
+                [
+                    spoken,
+                    `Read ${spoken}.`,
+                    "Name",
+                    spoken,
+                ],
+            );
+            assert.ok(html.includes(`<code>${identifier}</code>`));
+            assert.equal(speakCode(edge[0], language), edge[1]);
+        }
     }
+});
+
+test("minus signs, ranges and hyphen operators in inline code still say their hyphen, so values are not misheard", () => {
+    assert.equal(speakCode("-1", "it"), "trattino 1");
+    assert.equal(speakCode("1-10", "en"), "1 dash 10");
+    assert.equal(speakCode("a - b", "en"), "a dash b");
+    assert.equal(speakCode("i--", "en"), "i dash dash");
+    assert.equal(speakCode("e-5", "en"), "e dash 5");
+    assert.equal(speakCode("2026-11-06", "en"), "2026 dash 11 dash 06");
 });
 
 test("editing one sentence leaves the ids of the others unchanged, so their audio stays cached", () => {

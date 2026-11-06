@@ -198,7 +198,7 @@
             case "render":
                 setSpeed(data.speed, false);
                 doc.innerHTML = data.html;
-                const previous = units.find((u) => u.id === currentId);
+                const previous = units[indexOf(currentId)];
                 units = data.units;
                 if (previous && indexOf(currentId) < 0) {
                     // The current sentence was edited: Play and the arrows continue from the same place.

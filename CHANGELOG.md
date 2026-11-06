@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Truncated synthesis responses and empty audio are rejected before caching, allowing the sentence to be retried.
 - Pausing while webview audio loads prevents it from starting until playback is resumed.
 - Windows uses webview playback rather than selecting ffplay, whose native pause controls require POSIX signals.
-- Playback no longer hangs in the playing state when a save removes the sentence about to play, or when the panel's audio fails to decode after it started. A failed resume can no longer stop the next sentence.
+- Saving an edit to the sentence about to play continues from the same place instead of leaving the panel stuck in the playing state. Playback also no longer hangs when the panel's audio fails to decode after it started. A failed resume can no longer stop the next sentence.
 - Play and the arrow keys continue from the same place after the current sentence is edited and saved.
 - Shortcuts with Ctrl, Cmd or Alt (such as VS Code's zoom) no longer also change the reader's speed or playback.
 - A stored voice that the language doesn't offer is replaced and remembered once voices load, and audio prepared with it is dropped.

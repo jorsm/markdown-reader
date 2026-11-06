@@ -219,6 +219,9 @@ function setup(fetchImpl) {
 
 const voices = async () => new Response(JSON.stringify({ voices: [{ voiceId: "Jason", displayName: "Jason", description: "", languages: ["en"] }] }), { status: 200 });
 
+/** A successful Inworld synthesis reply. */
+const synthesized = () => new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 });
+
 const lastRender = (panel) => panel.posted.filter((message) => message.type === "render").at(-1);
 
 test("an external clean-document reload refreshes the preview without synthesizing audio", async () => {
@@ -403,7 +406,7 @@ test("a failed closed-source reload can be retried on the next file event", asyn
 });
 
 test("a saved refresh preserves playback when the current sentence still exists", { timeout: 5000 }, async () => {
-    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 }));
+    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : synthesized());
     const { document, context, deps } = setup(fetchImpl);
     let started;
     const playing = new Promise((resolve) => (started = resolve));
@@ -440,16 +443,14 @@ test("a saved refresh preserves playback when the current sentence still exists"
     }
 });
 
-test("a save that removes the queued current sentence stops playback instead of leaving the panel playing forever", { timeout: 5000 }, async () => {
+test("a save that removes the queued current sentence continues from its place instead of leaving the panel playing forever", { timeout: 5000 }, async () => {
     const pending = [];
     let released = false;
-    const audio = () => new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 4 } }), { status: 200 });
-    const { document, context, deps } = setup((url) => (url.endsWith("/voices") ? voices() : released ? audio() : new Promise((resolve) => pending.push(() => resolve(audio())))));
+    const { document, context, deps } = setup((url) => (url.endsWith("/voices") ? voices() : released ? synthesized() : new Promise((resolve) => pending.push(() => resolve(synthesized())))));
     document.getText = () => "# Title\n\nOne. Two. Three. Four.\n";
     const errors = fake.errorsShown.length;
     ReaderPanel.show(context, document, deps);
     const panel = fake.panels.at(-1);
-    const lastState = () => panel.posted.filter((message) => message.type === "state").at(-1).state;
     try {
         await panel.receive({ type: "ready" });
         const [
@@ -461,15 +462,17 @@ test("a save that removes the queued current sentence stops playback instead of 
         await panel.receive({ type: "start", id: title.id });
         document.getText = () => "# Heading\n\nOne. Two. Three. Four.\n";
         fake.change(document);
-        assert.ok(!lastRender(panel).units.some((unit) => unit.id === title.id));
+        const heading = lastRender(panel).units[0];
+        assert.notEqual(heading.id, title.id);
         released = true;
         while (pending.length) {
             pending.shift()();
         }
-        for (let i = 0; i < 200 && lastState() !== "stopped"; i++) {
+        for (let i = 0; i < 200 && !panel.posted.some((message) => message.type === "playing" && message.id === heading.id); i++) {
             await new Promise((resolve) => setTimeout(resolve, 5));
         }
-        assert.equal(lastState(), "stopped");
+        assert.ok(panel.posted.some((message) => message.type === "playing" && message.id === heading.id));
+        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "playing");
         assert.deepEqual(fake.errorsShown.slice(errors), []);
     } finally {
         panel.dispose();
@@ -478,13 +481,14 @@ test("a save that removes the queued current sentence stops playback instead of 
 
 test("a stored voice that the language doesn't offer is replaced and remembered once voices load", async () => {
     const { document, context, deps } = setup(voices);
-    await context.workspaceState.update(`markdownReader.choice:${document.uri.toString()}`, { language: "en", voice: "Retired" });
+    const key = `markdownReader.choice:${document.uri.toString()}`;
+    await context.workspaceState.update(key, { language: "en", voice: "Retired" });
     ReaderPanel.show(context, document, deps);
     const panel = fake.panels.at(-1);
     try {
         await panel.receive({ type: "ready" });
         assert.equal(panel.posted.find((message) => message.type === "voices").choice.voice, "Jason");
-        assert.deepEqual(context.workspaceState.get(`markdownReader.choice:${document.uri.toString()}`), { language: "en", voice: "Jason" });
+        assert.deepEqual(context.workspaceState.get(key), { language: "en", voice: "Jason" });
         assert.deepEqual(context.globalState.get("markdownReader.lastChoice"), { language: "en", voice: "Jason" });
     } finally {
         panel.dispose();
@@ -494,8 +498,9 @@ test("a stored voice that the language doesn't offer is replaced and remembered 
 test("choosing a model in a workspace that sets one writes the workspace setting, so the choice takes effect", async () => {
     const { document, context, deps } = setup(voices);
     const updates = [];
+    let workspaceValue = "inworld-tts-2";
     const getConfiguration = fake.vscode.workspace.getConfiguration;
-    const configuration = (workspaceValue) => () => ({
+    fake.vscode.workspace.getConfiguration = () => ({
         get: (_key, fallback) => fallback,
         inspect: () => ({ workspaceValue }),
         update: async (key, value, target) => void updates.push({ key, value, target }),
@@ -504,9 +509,8 @@ test("choosing a model in a workspace that sets one writes the workspace setting
     const panel = fake.panels.at(-1);
     try {
         await panel.receive({ type: "ready" });
-        fake.vscode.workspace.getConfiguration = configuration("inworld-tts-2");
         await panel.receive({ type: "model", value: "inworld-tts-2-flash" });
-        fake.vscode.workspace.getConfiguration = configuration(undefined);
+        workspaceValue = undefined;
         await panel.receive({ type: "model", value: "inworld-tts-2" });
         assert.deepEqual(updates, [
             { key: "model", value: "inworld-tts-2-flash", target: fake.vscode.ConfigurationTarget.Workspace },
@@ -575,7 +579,7 @@ test("accepting a replacement key can reload voices in a panel whose first reque
 });
 
 test("opening or closing an idle panel leaves native playback alone; starting it hands ownership over", { timeout: 5000 }, async () => {
-    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 }));
+    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : synthesized());
     const { document, context, deps } = setup(fetchImpl);
     let pending;
     const plays = [];

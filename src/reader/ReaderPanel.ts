@@ -85,7 +85,7 @@ export class ReaderPanel {
         await Promise.all(
             [...ReaderPanel.panels.values()].map((panel) => {
                 panel.voices = undefined;
-                return panel.sendVoices();
+                return panel.choose(panel.choice);
             }),
         );
     }
@@ -167,7 +167,7 @@ export class ReaderPanel {
             case "ready":
                 this.resetPlayback();
                 this.render();
-                await this.sendVoices();
+                await this.choose(this.choice);
                 break;
             case "start":
                 void this.playFrom(String(message.id));
@@ -219,15 +219,6 @@ export class ReaderPanel {
     }
 
     private async sendVoices(): Promise<void> {
-        if (!(await this.loadVoices())) {
-            return;
-        }
-        const voice = this.pickVoice(this.choice.language, this.choice.voice);
-        if (voice !== this.choice.voice) {
-            // The stored voice doesn't speak this language: drop audio prepared with it and remember the replacement.
-            this.resetPlayback();
-            await this.saveChoice({ ...this.choice, voice });
-        }
         const voices = this.voicesFor(this.choice.language).map(({ voiceId, displayName, description }) => ({ voiceId, displayName, description }));
         await this.post({ type: "voices", choice: this.choice, voices });
     }
@@ -261,25 +252,32 @@ export class ReaderPanel {
      */
     private async chooseModel(value: string): Promise<void> {
         this.resetPlayback();
-        const target = config().inspect("model")?.workspaceValue === undefined ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace;
-        await config().update("model", value, target);
+        const settings = config();
+        await settings.update("model", value, settings.inspect("model")?.workspaceValue === undefined ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace);
     }
 
+    /**
+     * Applies a language and voice choice, also on load and after the voice list reloads: a stored voice the
+     * language doesn't offer is replaced. Prepared audio is dropped and the choice remembered only when it changed.
+     */
     private async choose(next: Choice): Promise<void> {
-        const languageChanged = next.language !== this.choice.language;
-        await this.loadVoices();
-        this.resetPlayback();
-        await this.saveChoice({ language: next.language, voice: this.pickVoice(next.language, next.voice) });
+        const loaded = await this.loadVoices();
+        const choice = { language: next.language, voice: this.pickVoice(next.language, next.voice) };
+        const languageChanged = choice.language !== this.choice.language;
+        if (languageChanged || choice.voice !== this.choice.voice) {
+            this.resetPlayback();
+            this.choice = choice;
+            await Promise.all([
+                this.context.workspaceState.update(choiceKey(this.document), choice),
+                this.context.globalState.update("markdownReader.lastChoice", choice),
+            ]);
+        }
         if (languageChanged) {
             this.render();
         }
-        await this.sendVoices();
-    }
-
-    private async saveChoice(choice: Choice): Promise<void> {
-        this.choice = choice;
-        await this.context.workspaceState.update(choiceKey(this.document), choice);
-        await this.context.globalState.update("markdownReader.lastChoice", choice);
+        if (loaded) {
+            await this.sendVoices();
+        }
     }
 
     /** Synthesizes one unit (or takes it from the cache) for the scheduler. */
@@ -329,7 +327,18 @@ export class ReaderPanel {
                 if (!cached) {
                     void this.post({ type: "waiting" });
                 }
-                const file = await this.scheduler.ready(unit.id);
+                const waiting = unit;
+                const file = await this.scheduler.ready(waiting.id).catch((error: unknown) => {
+                    if (error instanceof NotWantedError && session === this.session && !this.byId.has(waiting.id)) {
+                        return undefined;
+                    }
+                    throw error;
+                });
+                if (file === undefined) {
+                    // A save removed this sentence while it was being prepared: continue from the same place.
+                    unit = this.units.find((u) => u.line >= waiting.line);
+                    continue;
+                }
                 if (!(await exists(file))) {
                     // The cache was cleared, perhaps from another window: prepare this unit again.
                     this.scheduler.forget(unit.id);
@@ -360,11 +369,8 @@ export class ReaderPanel {
                 this.setState("stopped");
             }
         } catch (error) {
-            if (session === this.session) {
-                // Resets end the session first, so a current-session NotWantedError means a save removed the queued unit.
-                if (!(error instanceof NotWantedError)) {
-                    this.notifyError(error);
-                }
+            if (session === this.session && !(error instanceof NotWantedError)) {
+                this.notifyError(error);
                 this.stopPlayback();
             }
         } finally {

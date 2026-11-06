@@ -443,7 +443,7 @@ test("a saved refresh preserves playback when the current sentence still exists"
     }
 });
 
-test("a save that edits the queued sentence mid-paragraph plays its new text instead of restarting the paragraph or hanging", { timeout: 5000 }, async () => {
+test("a save that edits the queued sentence mid-paragraph pauses at its new text instead of restarting the paragraph or hanging", { timeout: 5000 }, async () => {
     const pending = [];
     let released = false;
     const { document, context, deps } = setup((url) => (url.endsWith("/voices") ? voices() : released ? synthesized() : new Promise((resolve) => pending.push(() => resolve(synthesized())))));
@@ -471,14 +471,14 @@ test("a save that edits the queued sentence mid-paragraph plays its new text ins
             await new Promise((resolve) => setTimeout(resolve, 5));
         }
         assert.equal(played()[before], edited.id);
-        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "playing");
+        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "paused");
         assert.deepEqual(fake.errorsShown.slice(errors), []);
     } finally {
         panel.dispose();
     }
 });
 
-test("editing the sentence being played continues with the next sentence of its paragraph, not the next paragraph", { timeout: 5000 }, async () => {
+test("editing the sentence being played pauses at the next sentence of its paragraph, not the next paragraph", { timeout: 5000 }, async () => {
     const { document, context, deps } = setup(async (url) => (url.endsWith("/voices") ? voices() : synthesized()));
     document.getText = () => "# Title\n\nOne. Two. Three.\n\nNext paragraph.\n";
     const settles = [];
@@ -503,6 +503,8 @@ test("editing the sentence being played continues with the next sentence of its 
             original[2].id,
             original[3].id,
         ]);
+        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "paused");
+        assert.equal(settles.length, 0, "nothing plays until the listener resumes");
     } finally {
         panel.dispose();
     }

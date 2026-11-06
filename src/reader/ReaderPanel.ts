@@ -337,8 +337,9 @@ export class ReaderPanel {
                     throw error;
                 });
                 if (file === undefined) {
-                    // A save removed this sentence while it was being prepared: continue from the same place.
+                    // A save removed this sentence while it was being prepared: pause at its replacement (spec 0002).
                     unit = this.relocate(waiting, 0);
+                    this.pause();
                     continue;
                 }
                 if (!(await exists(file))) {
@@ -363,7 +364,13 @@ export class ReaderPanel {
                 await new Promise((resolve) => setTimeout(resolve, (PAUSE_MS[unit!.kind] ?? 250) / this.speed));
                 await this.whilePaused(session);
                 const current = this.byId.get(unit.id);
-                unit = current ? this.units[current.index + 1] : this.relocate(unit, 1);
+                if (current) {
+                    unit = this.units[current.index + 1];
+                } else {
+                    // A save removed the sentence that just played: pause at the one after it (spec 0002).
+                    unit = this.relocate(unit, 1);
+                    this.pause();
+                }
             }
             if (session === this.session) {
                 ReaderPanel.playback.release(this);

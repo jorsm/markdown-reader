@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Read Aloud** works when a Markdown file is open in VS Code's Markdown Preview or Markdown Editor tab instead of as text: the title bar button appears, and the command reads that file instead of saying "Open a Markdown file to read it aloud."
 - Inline code identifiers such as `billings_consumption_daily_usage` are read as separate words, without saying "underscore" or "trattino basso". Their displayed spelling is unchanged, and cached audio with the old pronunciation is not reused.
 - Hyphens that join words in inline code, as in `markdown-reader` or `--no-verify`, separate words instead of being read as "dash" or "trattino". Minus signs and ranges such as `-1` and `1-10` are still read.
 - Reader previews refresh after saved changes from external programs, including atomic file replacements and sources no longer loaded in the editor. File watching uses VS Code's URI APIs for local and Remote SSH files, preserves unsaved editor changes and stops when the reader closes.

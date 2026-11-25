@@ -6,11 +6,19 @@ const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 
 let current;
+class TabInputCustom {
+    constructor(uri, viewType) {
+        this.uri = uri;
+        this.viewType = viewType;
+    }
+}
 const vscode = {
     Uri: { joinPath: (base, ...parts) => ({ fsPath: join(base.fsPath, ...parts) }) },
+    TabInputCustom,
     window: {
         activeTextEditor: undefined,
         visibleTextEditors: [],
+        tabGroups: { activeTabGroup: { activeTab: undefined } },
         createOutputChannel: () => ({ info() {}, dispose() {} }),
         showInputBox: async () => current.input,
         showErrorMessage: async (message) => {
@@ -178,6 +186,64 @@ test("Read Aloud keeps the active remote document when invoked without a URI", a
     assert.equal(shown, document);
     assert.deepEqual(state.openedUris, [], "the active document must not be reopened through a local path");
     assert.deepEqual(state.requests, []);
+});
+
+for (const viewType of [
+    "vscode.markdown.preview.editor",
+    "vscode.markdown.editor",
+]) {
+    test(`Read Aloud from the palette reads the file shown in a ${viewType} tab, which has no text editor`, async (t) => {
+        const { state, context } = setup(t, undefined, () => {
+            throw new Error("opening a reader must not synthesize");
+        });
+        const uri = { scheme: "file", path: "/work/spec.md" };
+        state.document = { uri, languageId: "markdown" };
+        context.globalStorageUri = { fsPath: mkdtempSync(join(tmpdir(), "markdown-reader-tab-")) };
+        t.mock.property(vscode.window.tabGroups.activeTabGroup, "activeTab", { input: new TabInputCustom(uri, viewType) });
+        t.mock.method(NativePlayer, "find", async () => ({ error: "No local ffplay in this test" }));
+        let shown;
+        t.mock.method(ReaderPanel, "show", (_context, selected) => {
+            shown = selected;
+        });
+
+        await state.commands.get("markdownReader.open")();
+
+        assert.deepEqual(state.openedUris, [uri], "the tab's file must be opened through its URI");
+        assert.equal(shown, state.document);
+        assert.deepEqual(state.warnings, [], "the user must not be told to open a Markdown file they are already looking at");
+    });
+}
+
+test("the Read Aloud title button follows the file's language, so it also shows in preview tabs that have no text editor", () => {
+    const manifest = require("../package.json");
+    const button = manifest.contributes.menus["editor/title"].find((item) => item.command === "markdownReader.open");
+    assert.ok(
+        button.when.split("||").some((term) => term.trim() === "resourceLangId == markdown"),
+        "editorLangId alone hides the button when the file opens as a Markdown Preview",
+    );
+});
+
+test("Read Aloud from the palette does not read a .txt file shown in the Markdown Editor", async (t) => {
+    const { state } = setup(t);
+    const uri = { scheme: "file", path: "/work/notes.txt" };
+    state.document = { uri, languageId: "plaintext" };
+    t.mock.property(vscode.window.tabGroups.activeTabGroup, "activeTab", { input: new TabInputCustom(uri, "vscode.markdown.editor") });
+    t.mock.method(ReaderPanel, "show", () => assert.fail("plain text must not be rendered and billed as Markdown"));
+
+    await state.commands.get("markdownReader.open")();
+
+    assert.match(state.warnings[0], /Open a Markdown file/);
+});
+
+test("Read Aloud from the palette ignores a custom editor that is not a Markdown one", async (t) => {
+    const { state } = setup(t);
+    t.mock.property(vscode.window.tabGroups.activeTabGroup, "activeTab", { input: new TabInputCustom({ scheme: "file", path: "/work/diagram.png" }, "imagePreview.previewEditor") });
+    t.mock.method(ReaderPanel, "show", () => assert.fail("an image must not be opened as a document to read"));
+
+    await state.commands.get("markdownReader.open")();
+
+    assert.deepEqual(state.openedUris, [], "a binary file must never be opened as text");
+    assert.match(state.warnings[0], /Open a Markdown file/);
 });
 
 test("a malformed replacement key preserves the working key without contacting Inworld", async (t) => {

@@ -125,7 +125,7 @@ Resolved by the owner on 25 Oct 2026:
 
 ### Panel
 
-- A button in the editor title bar for Markdown files, and the command **Markdown Reader: Open Reader**, open the panel beside the editor for the active file.
+- A button in the editor title bar for Markdown files, and the command **Markdown Reader: Open Reader**, open the panel beside the editor for the active file. This includes a file shown in VS Code's own Markdown Preview or Markdown Editor tab (opened with "Open With…" or restored that way), which has no text editor.
 - The reader is installed locally in desktop VS Code, including when the workspace is on an SSH host. Explicit document URIs are opened through `workspace.openTextDocument` regardless of scheme, so selecting a remote file in the Explorer reads that file rather than another active editor. The source URI is retained when reading, refreshing and revealing source lines; a document discarded by VS Code is reopened through that URI.
 - The panel renders the file with `markdown-it`. YAML frontmatter is not shown or read.
 - Only one panel owns playback within an extension host, for either audio output. Starting another panel stops the previous owner's audio and lookahead and updates its toolbar to stopped. Opening, re-rendering, changing choices in, or closing an inactive panel cannot stop the current owner's audio. Closing the owner releases playback.

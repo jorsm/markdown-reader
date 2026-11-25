@@ -115,7 +115,13 @@ function isBasicCredential(value: string): boolean {
     return colon > 0 && colon < credential.length - 1;
 }
 
-/** The document to read: the clicked file, the active Markdown editor, or the one behind the active Markdown preview. */
+/** VS Code's built-in editors that show a Markdown file without a text editor: the preview chosen with "Open With…" and the rich Markdown editor. Other custom editors may hold binary files, which must not be opened as text. */
+const MARKDOWN_CUSTOM_EDITORS = new Set([
+    "vscode.markdown.preview.editor",
+    "vscode.markdown.editor",
+]);
+
+/** The document to read: the clicked file, the active Markdown editor, the file in an active Markdown preview tab, or the one behind the active Markdown preview. */
 async function markdownDocument(uri?: vscode.Uri): Promise<vscode.TextDocument | undefined> {
     if (uri) {
         return vscode.workspace.openTextDocument(uri);
@@ -123,6 +129,14 @@ async function markdownDocument(uri?: vscode.Uri): Promise<vscode.TextDocument |
     const active = vscode.window.activeTextEditor?.document;
     if (active?.languageId === "markdown") {
         return active;
+    }
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    if (tab instanceof vscode.TabInputCustom && MARKDOWN_CUSTOM_EDITORS.has(tab.viewType)) {
+        // The Markdown Editor also opens .txt files, which are not read.
+        const shown = await vscode.workspace.openTextDocument(tab.uri);
+        if (shown.languageId === "markdown") {
+            return shown;
+        }
     }
     return vscode.window.visibleTextEditors.map((e) => e.document).find((d) => d.languageId === "markdown");
 }

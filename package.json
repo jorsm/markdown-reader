@@ -44,7 +44,7 @@
             "editor/title": [
                 {
                     "command": "markdownReader.open",
-                    "when": "editorLangId == markdown || activeWebviewPanelId == 'markdown.preview'",
+                    "when": "editorLangId == markdown || resourceLangId == markdown || activeWebviewPanelId == 'markdown.preview'",
                     "group": "navigation"
                 }
             ],

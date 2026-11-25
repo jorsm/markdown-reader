@@ -80,7 +80,7 @@ function fakeVscode() {
     };
     const vscode = {
         ViewColumn: { One: 1, Beside: -2 },
-        ConfigurationTarget: { Global: 1 },
+        ConfigurationTarget: { Global: 1, Workspace: 2 },
         TextEditorRevealType: { InCenter: 0 },
         Position: class {
             constructor(line, character) {
@@ -127,7 +127,7 @@ function fakeVscode() {
         },
         workspace: {
             asRelativePath: (uri) => uri.path,
-            getConfiguration: () => ({ get: (_key, fallback) => fallback, update: async () => {} }),
+            getConfiguration: () => ({ get: (_key, fallback) => fallback, inspect: () => undefined, update: async () => {} }),
             fs: { isWritableFileSystem: (scheme) => (scheme === "file" || scheme === "vscode-remote" ? true : undefined) },
             onDidSaveTextDocument: event(saveListeners),
             onDidChangeTextDocument: event(changeListeners),
@@ -218,6 +218,9 @@ function setup(fetchImpl) {
 }
 
 const voices = async () => new Response(JSON.stringify({ voices: [{ voiceId: "Jason", displayName: "Jason", description: "", languages: ["en"] }] }), { status: 200 });
+
+/** A successful Inworld synthesis reply. */
+const synthesized = () => new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 });
 
 const lastRender = (panel) => panel.posted.filter((message) => message.type === "render").at(-1);
 
@@ -403,7 +406,7 @@ test("a failed closed-source reload can be retried on the next file event", asyn
 });
 
 test("a saved refresh preserves playback when the current sentence still exists", { timeout: 5000 }, async () => {
-    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 }));
+    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : synthesized());
     const { document, context, deps } = setup(fetchImpl);
     let started;
     const playing = new Promise((resolve) => (started = resolve));
@@ -436,6 +439,138 @@ test("a saved refresh preserves playback when the current sentence still exists"
         assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "playing");
         assert.equal(stopped, false);
     } finally {
+        panel.dispose();
+    }
+});
+
+test("a save that edits the queued sentence mid-paragraph pauses at its new text instead of restarting the paragraph or hanging", { timeout: 5000 }, async () => {
+    const pending = [];
+    let released = false;
+    const { document, context, deps } = setup((url) => (url.endsWith("/voices") ? voices() : released ? synthesized() : new Promise((resolve) => pending.push(() => resolve(synthesized())))));
+    document.getText = () => "# Title\n\nOne. Two. Three. Four. Five.\n";
+    const errors = fake.errorsShown.length;
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const played = () => panel.posted.filter((message) => message.type === "playing").map((message) => message.id);
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel).units;
+        // Starting at "Three" fills every synthesis slot, so clicking "Two" leaves it queued.
+        await panel.receive({ type: "start", id: original[3].id });
+        await panel.receive({ type: "start", id: original[2].id });
+        document.getText = () => "# Title\n\nOne. Deux. Three. Four. Five.\n";
+        fake.change(document);
+        const edited = lastRender(panel).units[2];
+        assert.notEqual(edited.id, original[2].id);
+        const before = played().length;
+        released = true;
+        while (pending.length) {
+            pending.shift()();
+        }
+        for (let i = 0; i < 200 && !played().includes(edited.id); i++) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        assert.equal(played()[before], edited.id);
+        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "paused");
+        assert.deepEqual(fake.errorsShown.slice(errors), []);
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("editing the sentence being played pauses at the next sentence of its paragraph, not the next paragraph", { timeout: 5000 }, async () => {
+    const { document, context, deps } = setup(async (url) => (url.endsWith("/voices") ? voices() : synthesized()));
+    document.getText = () => "# Title\n\nOne. Two. Three.\n\nNext paragraph.\n";
+    const settles = [];
+    deps.player = { play: () => new Promise((resolve) => settles.push(resolve)), stop: () => settles.splice(0).forEach((settle) => settle("stopped")), pause() {}, resume() {} };
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    const played = () => panel.posted.filter((message) => message.type === "playing").map((message) => message.id);
+    try {
+        await panel.receive({ type: "ready" });
+        const original = lastRender(panel).units;
+        await panel.receive({ type: "start", id: original[2].id });
+        while (!settles.length) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        document.getText = () => "# Title\n\nOne. Deux. Three.\n\nNext paragraph.\n";
+        fake.change(document);
+        settles.shift()("ended");
+        for (let i = 0; i < 200 && played().length < 2; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        assert.deepEqual(played(), [
+            original[2].id,
+            original[3].id,
+        ]);
+        assert.equal(panel.posted.filter((message) => message.type === "state").at(-1).state, "paused");
+        assert.equal(settles.length, 0, "nothing plays until the listener resumes");
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("a language chosen while the voice list loads is kept when the list arrives", async () => {
+    const answers = [];
+    const { document, context, deps } = setup(() => new Promise((resolve) => answers.push(resolve)));
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        const ready = panel.receive({ type: "ready" });
+        const chosen = panel.receive({ type: "choose", language: "it", voice: "" });
+        while (answers.length < 2) {
+            await new Promise(setImmediate);
+        }
+        answers.pop()(await voices());
+        await chosen;
+        answers.pop()(await voices());
+        await ready;
+        assert.equal(context.workspaceState.get(`markdownReader.choice:${document.uri.toString()}`).language, "it");
+        assert.equal(lastRender(panel).choice.language, "it");
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("a stored voice that the language doesn't offer is replaced and remembered once voices load", async () => {
+    const { document, context, deps } = setup(voices);
+    const key = `markdownReader.choice:${document.uri.toString()}`;
+    await context.workspaceState.update(key, { language: "en", voice: "Retired" });
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        assert.equal(panel.posted.find((message) => message.type === "voices").choice.voice, "Jason");
+        assert.deepEqual(context.workspaceState.get(key), { language: "en", voice: "Jason" });
+        assert.deepEqual(context.globalState.get("markdownReader.lastChoice"), { language: "en", voice: "Jason" });
+    } finally {
+        panel.dispose();
+    }
+});
+
+test("choosing a model in a workspace that sets one writes the workspace setting, so the choice takes effect", async () => {
+    const { document, context, deps } = setup(voices);
+    const updates = [];
+    let workspaceValue = "inworld-tts-2";
+    const getConfiguration = fake.vscode.workspace.getConfiguration;
+    fake.vscode.workspace.getConfiguration = () => ({
+        get: (_key, fallback) => fallback,
+        inspect: () => ({ workspaceValue }),
+        update: async (key, value, target) => void updates.push({ key, value, target }),
+    });
+    ReaderPanel.show(context, document, deps);
+    const panel = fake.panels.at(-1);
+    try {
+        await panel.receive({ type: "ready" });
+        await panel.receive({ type: "model", value: "inworld-tts-2-flash" });
+        workspaceValue = undefined;
+        await panel.receive({ type: "model", value: "inworld-tts-2" });
+        assert.deepEqual(updates, [
+            { key: "model", value: "inworld-tts-2-flash", target: fake.vscode.ConfigurationTarget.Workspace },
+            { key: "model", value: "inworld-tts-2", target: fake.vscode.ConfigurationTarget.Global },
+        ]);
+    } finally {
+        fake.vscode.workspace.getConfiguration = getConfiguration;
         panel.dispose();
     }
 });
@@ -497,7 +632,7 @@ test("accepting a replacement key can reload voices in a panel whose first reque
 });
 
 test("opening or closing an idle panel leaves native playback alone; starting it hands ownership over", { timeout: 5000 }, async () => {
-    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : new Response(JSON.stringify({ audioContent: Buffer.from("audio").toString("base64"), usage: { processedCharactersCount: 12 } }), { status: 200 }));
+    const fetchImpl = async (url) => (url.endsWith("/voices") ? voices() : synthesized());
     const { document, context, deps } = setup(fetchImpl);
     let pending;
     const plays = [];

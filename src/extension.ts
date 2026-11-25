@@ -13,6 +13,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const log = vscode.window.createOutputChannel("Markdown Reader", { log: true });
     context.subscriptions.push(log);
     let deps: Promise<Deps> | undefined;
+    // A failed start is forgotten, so the next command tries again instead of repeating the old error.
+    const getDeps = () =>
+        (deps ??= createDeps(context, log).catch((error: unknown) => {
+            deps = undefined;
+            throw error;
+        }));
 
     context.subscriptions.push(
         vscode.commands.registerCommand("markdownReader.open", async (uri?: vscode.Uri) => {
@@ -21,10 +27,10 @@ export function activate(context: vscode.ExtensionContext): void {
                 void vscode.window.showWarningMessage("Open a Markdown file to read it aloud.");
                 return;
             }
-            ReaderPanel.show(context, document, await (deps ??= createDeps(context, log)));
+            ReaderPanel.show(context, document, await getDeps());
         }),
         vscode.commands.registerCommand("markdownReader.setApiKey", () => askForKey(context)),
-        vscode.commands.registerCommand("markdownReader.clearCache", async () => clearCache((await (deps ??= createDeps(context, log))).synthesizer)),
+        vscode.commands.registerCommand("markdownReader.clearCache", async () => clearCache((await getDeps()).synthesizer)),
     );
 }
 

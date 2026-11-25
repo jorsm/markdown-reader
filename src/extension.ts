@@ -135,7 +135,11 @@ async function markdownDocument(uri?: vscode.Uri): Promise<vscode.TextDocument |
     }
     const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
     if (tab instanceof vscode.TabInputCustom && MARKDOWN_CUSTOM_EDITORS.has(tab.viewType)) {
-        return vscode.workspace.openTextDocument(tab.uri);
+        // The Markdown Editor also opens .txt files, which are not read.
+        const shown = await vscode.workspace.openTextDocument(tab.uri);
+        if (shown.languageId === "markdown") {
+            return shown;
+        }
     }
     return vscode.window.visibleTextEditors.map((e) => e.document).find((d) => d.languageId === "markdown");
 }

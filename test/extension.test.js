@@ -220,6 +220,18 @@ for (const viewType of [
     });
 }
 
+test("Read Aloud from the palette does not read a .txt file shown in the Markdown Editor", async (t) => {
+    const { state } = setup(t);
+    const uri = { scheme: "file", path: "/work/notes.txt" };
+    state.document = { uri, languageId: "plaintext" };
+    t.mock.property(vscode.window.tabGroups.activeTabGroup, "activeTab", { input: new TabInputCustom(uri, "vscode.markdown.editor") });
+    t.mock.method(ReaderPanel, "show", () => assert.fail("plain text must not be rendered and billed as Markdown"));
+
+    await state.commands.get("markdownReader.open")();
+
+    assert.match(state.warnings[0], /Open a Markdown file/);
+});
+
 test("Read Aloud from the palette ignores a custom editor that is not a Markdown one", async (t) => {
     const { state } = setup(t);
     t.mock.property(vscode.window.tabGroups.activeTabGroup, "activeTab", { input: new TabInputCustom({ scheme: "file", path: "/work/diagram.png" }, "imagePreview.previewEditor") });

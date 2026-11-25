@@ -212,13 +212,16 @@ for (const viewType of [
         assert.equal(shown, state.document);
         assert.deepEqual(state.warnings, [], "the user must not be told to open a Markdown file they are already looking at");
     });
-
-    test(`the Read Aloud title button is shown in a ${viewType} tab`, () => {
-        const manifest = require("../package.json");
-        const button = manifest.contributes.menus["editor/title"].find((item) => item.command === "markdownReader.open");
-        assert.ok(button.when.includes(`activeCustomEditorId == '${viewType}'`), "without it the button disappears when the file opens as a preview");
-    });
 }
+
+test("the Read Aloud title button follows the file's language, so it also shows in preview tabs that have no text editor", () => {
+    const manifest = require("../package.json");
+    const button = manifest.contributes.menus["editor/title"].find((item) => item.command === "markdownReader.open");
+    assert.ok(
+        button.when.split("||").some((term) => term.trim() === "resourceLangId == markdown"),
+        "editorLangId alone hides the button when the file opens as a Markdown Preview",
+    );
+});
 
 test("Read Aloud from the palette does not read a .txt file shown in the Markdown Editor", async (t) => {
     const { state } = setup(t);

@@ -115,10 +115,7 @@ function isBasicCredential(value: string): boolean {
     return colon > 0 && colon < credential.length - 1;
 }
 
-/**
- * VS Code's built-in editors that show a Markdown file without a text editor: the preview chosen with "Open With…" and the rich Markdown editor.
- * The `editor/title` button's `when` clause in `package.json` lists the same ids.
- */
+/** VS Code's built-in editors that show a Markdown file without a text editor: the preview chosen with "Open With…" and the rich Markdown editor. Other custom editors may hold binary files, which must not be opened as text. */
 const MARKDOWN_CUSTOM_EDITORS = new Set([
     "vscode.markdown.preview.editor",
     "vscode.markdown.editor",

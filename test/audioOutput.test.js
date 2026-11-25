@@ -76,13 +76,27 @@ test("resume while a unit is still loading does not replay the previous audio", 
     await playing;
 });
 
-test("the panel loads paused audio without playing it until the host sends resume", () => {
+function panelScript() {
     const elements = new Map();
-    const element = () => ({ addEventListener() {} });
+    const element = () => ({
+        dataset: {},
+        attributes: {},
+        listeners: {},
+        addEventListener(name, handler) {
+            this.listeners[name] = handler;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        },
+        click() {
+            this.listeners.click();
+        },
+    });
+    const posted = [];
     let receive;
     let playCalls = 0;
     runInNewContext(readFileSync(join(__dirname, "../media/reader.js"), "utf8"), {
-        acquireVsCodeApi: () => ({ postMessage() {} }),
+        acquireVsCodeApi: () => ({ postMessage: (message) => posted.push(message) }),
         document: {
             getElementById: (id) => {
                 if (!elements.has(id)) {
@@ -107,8 +121,50 @@ test("the panel loads paused audio without playing it until the host sends resum
         URL: { createObjectURL: () => "blob:probe", revokeObjectURL() {} },
         Blob,
     });
-    receive({ data: { type: "play", token: 1, data: new Uint8Array([1]), paused: true } });
-    assert.equal(playCalls, 0, "preparing paused audio must not start sound");
-    receive({ data: { type: "resumeAudio" } });
-    assert.equal(playCalls, 1, "only an explicit resume starts sound");
+    return { elements, posted, receive: (message) => receive({ data: message }), playCalls: () => playCalls };
+}
+
+test("the panel loads paused audio without playing it until the host sends resume", () => {
+    const panel = panelScript();
+    panel.receive({ type: "play", token: 1, data: new Uint8Array([1]), paused: true });
+    assert.equal(panel.playCalls(), 0, "preparing paused audio must not start sound");
+    panel.receive({ type: "resumeAudio" });
+    assert.equal(panel.playCalls(), 1, "only an explicit resume starts sound");
+});
+
+test("the loading button remains a pause control and clears its spinner when ready, paused or stopped", () => {
+    const panel = panelScript();
+    const button = panel.elements.get("play");
+    const status = panel.elements.get("status");
+    panel.receive({ type: "state", state: "playing" });
+    panel.receive({ type: "waiting", waiting: true });
+    assert.equal(button.dataset.loading, "true");
+    assert.equal(button.attributes["aria-busy"], "true");
+    assert.match(button.attributes["aria-label"], /Pause.*preparing audio/);
+    assert.equal(status.textContent, "Preparing audio…");
+    button.click();
+    assert.equal(panel.posted.at(-1).type, "pause", "the loading control must still be usable");
+
+    panel.receive({ type: "state", state: "paused" });
+    assert.equal(button.dataset.loading, "false");
+    assert.equal(button.attributes["aria-busy"], "false");
+    assert.equal(button.attributes["aria-label"], "Resume");
+    button.click();
+    assert.equal(panel.posted.at(-1).type, "resume");
+
+    panel.receive({ type: "state", state: "playing" });
+    assert.equal(button.dataset.loading, "true", "resuming an unfinished request still shows loading");
+    panel.receive({ type: "waiting", waiting: false });
+    assert.equal(button.dataset.loading, "false");
+    assert.equal(button.attributes["aria-label"], "Pause");
+    assert.equal(status.textContent, "");
+
+    panel.receive({ type: "waiting", waiting: true });
+    panel.receive({ type: "state", state: "stopped" });
+    assert.equal(button.dataset.loading, "false");
+    assert.equal(button.attributes["aria-busy"], "false");
+    assert.equal(button.attributes["aria-label"], "Play");
+    assert.equal(status.textContent, "");
+    panel.receive({ type: "state", state: "playing" });
+    assert.equal(button.dataset.loading, "false", "a stopped session must not leave loading behind");
 });

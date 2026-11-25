@@ -1,11 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mkdtempSync, readdirSync, readFileSync, statSync } = require("node:fs");
+const { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } = require("node:fs");
+const { rename } = require("node:fs/promises");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 const { Telemetry } = require("../out/telemetry/Telemetry.js");
 const { InworldClient } = require("../out/tts/InworldClient.js");
-const { Synthesizer } = require("../out/reader/Synthesizer.js");
+const { Synthesizer, moveIntoCache } = require("../out/reader/Synthesizer.js");
 const { renderDocument } = require("../out/text/units.js");
 
 const MARKER = "zebra-marker-7f3a";
@@ -212,6 +213,48 @@ test("independent synthesizers cannot collide on a temporary cache file", async 
     files.forEach((file) => assert.equal(readFileSync(file, "utf8"), "ID3 fake audio"));
     assert.ok(!allFiles(dir).some((file) => file.endsWith(".part")));
     assert.equal(telemetry.monthSpend().requests, 2, "separate hosts may synthesize twice, and both bills must be retained");
+});
+
+/** A rename that fails like Windows does while another process replaces or reads the destination. */
+function windowsConflict(times, code = "EPERM") {
+    let failures = 0;
+    return async (from, to) => {
+        if (failures < times) {
+            failures++;
+            throw Object.assign(new Error(`${code}: operation not permitted, rename`), { code });
+        }
+        return rename(from, to);
+    };
+}
+
+test("a cache file written by another window is kept when the rename onto it is refused", async () => {
+    // Catches the Windows EPERM failing playback although the audio is already cached.
+    const dir = mkdtempSync(join(tmpdir(), "markdown-reader-"));
+    const file = join(dir, "unit.mp3");
+    const partial = `${file}.1.part`;
+    writeFileSync(file, "ID3 other window");
+    writeFileSync(partial, "ID3 this window");
+    await moveIntoCache(partial, file, windowsConflict(Infinity));
+    assert.equal(readFileSync(file, "utf8"), "ID3 other window");
+});
+
+test("a refused rename is retried while no complete cache file is there", async () => {
+    // Catches giving up on a transient EBUSY when no other window has written the audio.
+    const dir = mkdtempSync(join(tmpdir(), "markdown-reader-"));
+    const file = join(dir, "unit.mp3");
+    const partial = `${file}.1.part`;
+    writeFileSync(partial, "ID3 this window");
+    await moveIntoCache(partial, file, windowsConflict(2, "EBUSY"));
+    assert.equal(readFileSync(file, "utf8"), "ID3 this window");
+});
+
+test("a rename that keeps failing with no cache file reports the error", async () => {
+    // Catches retrying forever, or reporting success for audio that never reached the cache.
+    const dir = mkdtempSync(join(tmpdir(), "markdown-reader-"));
+    const file = join(dir, "unit.mp3");
+    const partial = `${file}.1.part`;
+    writeFileSync(partial, "ID3 this window");
+    await assert.rejects(moveIntoCache(partial, file, windowsConflict(Infinity, "EACCES")), { code: "EACCES" });
 });
 
 test("synthesis error messages are limited to the first 50 characters", async () => {

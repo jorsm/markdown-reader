@@ -137,7 +137,7 @@ export class Synthesizer {
             const partial = `${file}.${randomUUID()}.part`;
             try {
                 await writeFile(partial, result.audio);
-                await rename(partial, file);
+                await moveIntoCache(partial, file);
             } finally {
                 await rm(partial, { force: true });
             }
@@ -174,6 +174,50 @@ export function cacheKey(job: SynthRequest): string {
 /** The message of any thrown value, for notifications and telemetry. */
 export function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+/** Error codes Windows gives when a rename's destination is being replaced or is open in another process. */
+const RENAME_CONFLICTS = new Set([
+    "EPERM",
+    "EBUSY",
+    "EACCES",
+]);
+const RENAME_ATTEMPTS = 5;
+const RENAME_RETRY_MS = 25;
+
+/**
+ * Renames a finished temporary file onto its cache key. On Windows the rename fails while another
+ * window replaces or reads the same key; a complete file already there is the same audio, so it is
+ * kept, and otherwise the rename is retried briefly. The caller removes the temporary file.
+ * `renameFile` lets tests reproduce Windows rename failures on any platform.
+ */
+export async function moveIntoCache(partial: string, file: string, renameFile: typeof rename = rename): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            await renameFile(partial, file);
+            return;
+        } catch (error) {
+            if (!RENAME_CONFLICTS.has((error as NodeJS.ErrnoException).code ?? "")) {
+                throw error;
+            }
+            if (await hasAudio(file)) {
+                return;
+            }
+            if (attempt >= RENAME_ATTEMPTS) {
+                throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_MS * attempt));
+        }
+    }
+}
+
+/** True if `file` holds audio; empty audio never enters the cache, so a non-empty file at a cache key is complete. */
+async function hasAudio(file: string): Promise<boolean> {
+    try {
+        return (await stat(file)).size > 0;
+    } catch {
+        return false;
+    }
 }
 
 /** True if `file` exists; a cached file can disappear when the cache is cleared, from any window. */
